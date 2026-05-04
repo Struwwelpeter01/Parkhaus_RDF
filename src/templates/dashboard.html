@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parkhaus Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏪 Parkhaus Management System</h1>
+        </header>
+
+        <div class="main-content">
+            <!-- Linke Spalte: Kennzeichen-Eingabe -->
+            <div class="left-panel">
+                <div class="panel">
+                    <h2>🚗 Kennzeichen-Eingabe</h2>
+                    <div class="kennzeichen-input-section">
+                        <div class="form-group">
+                            <label for="kennzeichen-input">Kennzeichen (z.B. AB-1234):</label>
+                            <input type="text" id="kennzeichen-input" placeholder="AB-1234" pattern="[A-Z]{1,2}-[0-9]{4}" maxlength="7" required>
+                        </div>
+                        <button id="btn-hinzufuegen" class="btn btn-success">➕ Fahrzeug hinzufügen</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Rechte Spalte: Zusammengefasster Status & Aktive Fahrzeuge -->
+            <div class="right-panel">
+                <div class="panel">
+                    <h2>🏪 Parkhaus-Status</h2>
+                    <div class="status-grid">
+                        <div class="status-card">
+                            <div class="status-head">Einfahrt</div>
+                            <div class="ampel compact" id="ampel-einfahrt">
+                                <div class="licht gruen"></div>
+                                <div class="licht rot aktiv"></div>
+                            </div>
+                            <div class="status-box" id="status-einfahrt">Schranke geschlossen</div>
+                        </div>
+
+                        <div class="status-card">
+                            <div class="status-head">Ausfahrt</div>
+                            <div class="ampel compact" id="ampel-ausfahrt">
+                                <div class="licht gruen"></div>
+                                <div class="licht rot aktiv"></div>
+                            </div>
+                            <div class="status-box" id="status-ausfahrt">Schranke geschlossen</div>
+                        </div>
+
+                        <div class="status-card">
+                            <div class="status-head">Parkhaus Status</div>
+                            <div class="ampel compact" id="ampel-parkhaus">
+                                <div class="licht gruen aktiv"></div>
+                                <div class="licht rot"></div>
+                            </div>
+                            <div class="status-box" id="parkhaus-counter">0 / 15</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Aktive Parkvorgänge -->
+                <div class="panel">
+                    <h2>⏱️ Aktive Fahrzeuge</h2>
+                    <div id="aktive-parkvorgaenge">
+                        <div class="no-data">Keine Fahrzeuge im Parkhaus</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal für Kosten-Anzeige -->
+        <div id="kosten-modal" class="modal">
+            <div class="modal-content">
+                <h3>💰 Parkgebühren</h3>
+                <div id="kosten-details"></div>
+                <button id="btn-bezahlen" class="btn btn-success">Bezahlen & Ausfahrt öffnen</button>
+                <button id="btn-modal-close" class="btn btn-secondary">Schließen</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>
