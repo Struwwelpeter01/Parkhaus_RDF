@@ -76,3 +76,56 @@ Das Dashboard enthält einen Demo-Button zum Simulieren von Kennzeichen-Eingaben
 3. **YOLO11-Integration**: Echte Kennzeichen-Erkennung implementieren
 4. **OCR-Integration**: Text aus Bildern extrahieren
 5. **GPIO-Schaltung**: Schranken-Motoren und Ampel-LEDs ansteuern
+sudo apt install -y python3-opencv python3-picamera2
+```
+
+Die Kamera sollte im Raspberry-Pi-System aktiviert sein. Bei aktuellen Raspberry
+Pi OS Versionen funktioniert das normalerweise direkt mit `picamera2`.
+
+### 2. Programm starten
+
+Im Projektordner:
+
+```bash
+python3 capture_training_images.py --plate RO-AB123
+```
+
+Dann im Vorschaufenster:
+
+- `s` speichert ein Bild
+- `q` beendet das Programm
+
+Die Bilder landen nach Kennzeichen sortiert in:
+
+```text
+data/raw/RO-AB123/
+```
+
+Zusaetzlich wird eine CSV-Datei geschrieben:
+
+```text
+data/manifest.csv
+```
+
+### Automatisch viele Bilder aufnehmen
+
+Alle 2 Sekunden ein Bild speichern und nach 50 Bildern stoppen:
+
+```bash
+python3 capture_training_images.py --plate RO-AB123 --interval 2 --limit 50
+```
+
+Ohne Vorschaufenster, z.B. per SSH:
+
+```bash
+python3 capture_training_images.py --plate RO-AB123 --interval 2 --limit 50 --no-preview
+```
+
+### Tipps fuer gute Trainingsdaten
+
+- Pro Kennzeichen mehrere Bilder aus leicht unterschiedlichen Winkeln aufnehmen.
+- Unterschiedliche Helligkeit testen: hell, schattig, abends.
+- Kennzeichen nicht nur perfekt mittig fotografieren.
+- Unscharfe oder stark verdeckte Bilder spaeter aussortieren.
+- Fuer den Anfang lieber wenige saubere Klassen/Bilder statt sehr viele schlechte.
+>>>>>>> 59cfdc23729f74e0ccd2bde96062732258b8e9ad
