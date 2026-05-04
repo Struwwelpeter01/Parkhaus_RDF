@@ -45,5 +45,4 @@ except KeyboardInterrupt:
     print("\n\n🛑 Server wurde beendet.")
     sys.exit(0)
 
-#test
-#test2
+
