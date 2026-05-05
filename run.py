@@ -16,6 +16,7 @@ sys.path.insert(0, src_path)
 
 # Flask-App importieren
 from app import app
+from app import camera_recognizer
 
 print("🚗 Parkhaus Management System wird gestartet...\n")
 print("=" * 50)
@@ -40,6 +41,7 @@ browser_thread.start()
 
 # Flask-App starten
 try:
+    camera_recognizer.start()
     app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False)
 except KeyboardInterrupt:
     print("\n\n🛑 Server wurde beendet.")

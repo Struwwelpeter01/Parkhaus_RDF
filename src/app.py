@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 import json
 import os
+from camera_recognition import camera_recognizer
 
 # Flask-App mit korrekten Pfaden initialisieren
 app_dir = os.path.dirname(os.path.abspath(__file__))
@@ -47,6 +48,10 @@ def init_db():
 @app.route('/')
 def dashboard():
     return render_template('dashboard.html')
+
+@app.route('/api/kamera/kennzeichen', methods=['GET'])
+def get_kamera_kennzeichen():
+    return jsonify(camera_recognizer.get_state())
 
 # API: Alle Fahrzeuge abrufen (für Debugging/Entwicklung)
 @app.route('/api/fahrzeuge', methods=['GET'])
@@ -170,4 +175,5 @@ def get_aktive_parkvorgaenge():
 
 if __name__ == '__main__':
     init_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    camera_recognizer.start()
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

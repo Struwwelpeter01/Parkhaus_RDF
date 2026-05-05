@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", function () {
     let aktiveVorgaenge = [];
     let currentPage = 1;
     let pendingAusfahrtKennzeichen = null;
+    let lastCameraPlate = "";
+    let ignoredCameraPlate = "";
+    let cameraFilledInput = false;
 
     function ladePlatzBelegung() {
         try {
@@ -114,6 +117,24 @@ document.addEventListener("DOMContentLoaded", function () {
 
     function validateKennzeichen(kennzeichen) {
         return /^[A-Z]{1,2}-[0-9]{4}$/.test(kennzeichen.toUpperCase());
+    }
+
+    async function loadKameraKennzeichen() {
+        try {
+            const response = await fetch("/api/kamera/kennzeichen");
+            const result = await response.json();
+            const plate = (result.plate || "").trim().toUpperCase();
+
+            if (!plate || plate === ignoredCameraPlate || plate === lastCameraPlate) {
+                return;
+            }
+
+            lastCameraPlate = plate;
+            kennzeichenInput.value = plate;
+            cameraFilledInput = true;
+        } catch (error) {
+            console.error("Fehler beim Laden des Kamera-Kennzeichens:", error);
+        }
     }
 
     async function loadData() {
@@ -246,6 +267,9 @@ document.addEventListener("DOMContentLoaded", function () {
             const result = await response.json();
 
             if (response.ok) {
+                ignoredCameraPlate = kennzeichen;
+                lastCameraPlate = kennzeichen;
+                cameraFilledInput = false;
                 kennzeichenInput.value = "";
                 oeffneSchranke(ampelEinfahrt);
                 await loadData();
@@ -261,6 +285,18 @@ document.addEventListener("DOMContentLoaded", function () {
     kennzeichenInput.addEventListener("keypress", event => {
         if (event.key === "Enter") {
             btnHinzufuegen.click();
+        }
+    });
+
+    kennzeichenInput.addEventListener("input", () => {
+        const value = kennzeichenInput.value.trim().toUpperCase();
+        if (cameraFilledInput && !value && lastCameraPlate) {
+            ignoredCameraPlate = lastCameraPlate;
+            cameraFilledInput = false;
+        }
+        if (value && value !== lastCameraPlate) {
+            ignoredCameraPlate = "";
+            cameraFilledInput = false;
         }
     });
 
@@ -321,9 +357,12 @@ document.addEventListener("DOMContentLoaded", function () {
             buchstaben[Math.floor(Math.random() * buchstaben.length)];
         const nummer = String(Math.floor(Math.random() * 9000) + 1000);
         kennzeichenInput.value = `${prefix}-${nummer}`;
+        cameraFilledInput = false;
     });
     document.querySelector(".kennzeichen-input-section").appendChild(demoBtn);
 
     loadData();
+    loadKameraKennzeichen();
     setInterval(loadData, 5000);
+    setInterval(loadKameraKennzeichen, 600);
 });
