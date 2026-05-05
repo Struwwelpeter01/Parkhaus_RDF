@@ -1,65 +1,119 @@
-document.addEventListener('DOMContentLoaded', function() {
-    const kennzeichenInput = document.getElementById('kennzeichen-input');
-    const btnHinzufuegen = document.getElementById('btn-hinzufuegen');
-    const aktiveParkvorgaenge = document.getElementById('aktive-parkvorgaenge');
-    const parkhausCounter = document.getElementById('parkhaus-counter');
-    const ampelParkhaus = document.getElementById('ampel-parkhaus');
-    const ampelEinfahrt = document.getElementById('ampel-einfahrt');
-    const ampelAusfahrt = document.getElementById('ampel-ausfahrt');
-    const statusEinfahrt = document.getElementById('status-einfahrt');
-    const statusAusfahrt = document.getElementById('status-ausfahrt');
+document.addEventListener("DOMContentLoaded", function () {
+    const kennzeichenInput = document.getElementById("kennzeichen-input");
+    const btnHinzufuegen = document.getElementById("btn-hinzufuegen");
+    const aktiveParkvorgaenge = document.getElementById("aktive-parkvorgaenge");
+    const fahrzeugPagination = document.getElementById("fahrzeug-pagination");
+    const parkingLot = document.getElementById("parking-lot");
+    const parkhausCounter = document.getElementById("parkhaus-counter");
+    const ampelParkhaus = document.getElementById("ampel-parkhaus");
+    const ampelEinfahrt = document.getElementById("ampel-einfahrt");
+    const ampelAusfahrt = document.getElementById("ampel-ausfahrt");
+    const statusEinfahrt = document.getElementById("status-einfahrt");
+    const statusAusfahrt = document.getElementById("status-ausfahrt");
+    const kostenModal = document.getElementById("kosten-modal");
+    const kostenDetails = document.getElementById("kosten-details");
+    const btnBezahlen = document.getElementById("btn-bezahlen");
+    const btnModalClose = document.getElementById("btn-modal-close");
+
+    const MAX_PARKPLAETZE = 15;
+    const PAGE_SIZE = 5;
+    const PARKPLATZ_STORAGE_KEY = "parkhaus_platz_belegung";
 
     let parkhausBelegt = 0;
-    const MAX_PARKPLAETZE = 15;
+    let aktiveVorgaenge = [];
+    let currentPage = 1;
+    let pendingAusfahrtKennzeichen = null;
+
+    function ladePlatzBelegung() {
+        try {
+            return JSON.parse(localStorage.getItem(PARKPLATZ_STORAGE_KEY)) || {};
+        } catch (error) {
+            return {};
+        }
+    }
+
+    function speicherePlatzBelegung(belegung) {
+        localStorage.setItem(PARKPLATZ_STORAGE_KEY, JSON.stringify(belegung));
+    }
+
+    function freiePlaetze(belegung) {
+        const belegtePlaetze = new Set(Object.values(belegung));
+        return Array.from({ length: MAX_PARKPLAETZE }, (_, index) => index + 1)
+            .filter(platz => !belegtePlaetze.has(platz));
+    }
+
+    function synchronisiereParkplaetze(vorgaenge) {
+        const belegung = ladePlatzBelegung();
+        const aktiveIds = new Set(vorgaenge.map(v => String(v.id)));
+
+        Object.keys(belegung).forEach(id => {
+            if (!aktiveIds.has(id)) {
+                delete belegung[id];
+            }
+        });
+
+        vorgaenge.forEach(vorgang => {
+            const id = String(vorgang.id);
+            if (!belegung[id]) {
+                const frei = freiePlaetze(belegung);
+                if (frei.length > 0) {
+                    belegung[id] = frei[Math.floor(Math.random() * frei.length)];
+                }
+            }
+        });
+
+        speicherePlatzBelegung(belegung);
+        return belegung;
+    }
 
     function updateParkhausStatus() {
-        parkhausCounter.textContent = `${String(parkhausBelegt).padStart(2, '0')} / ${MAX_PARKPLAETZE}`;
+        parkhausCounter.textContent = `${parkhausBelegt} / ${MAX_PARKPLAETZE}`;
 
-        const parkhausGruen = ampelParkhaus.querySelector('.gruen');
-        const parkhausRot = ampelParkhaus.querySelector('.rot');
+        const parkhausGruen = ampelParkhaus.querySelector(".gruen");
+        const parkhausRot = ampelParkhaus.querySelector(".rot");
 
         if (parkhausBelegt >= MAX_PARKPLAETZE) {
-            parkhausGruen.classList.remove('aktiv');
-            parkhausRot.classList.add('aktiv');
+            parkhausGruen.classList.remove("aktiv");
+            parkhausRot.classList.add("aktiv");
         } else {
-            parkhausGruen.classList.add('aktiv');
-            parkhausRot.classList.remove('aktiv');
+            parkhausGruen.classList.add("aktiv");
+            parkhausRot.classList.remove("aktiv");
         }
     }
 
     function updateSchrankenAnzeige() {
-        if (ampelEinfahrt.querySelector('.gruen').classList.contains('aktiv')) {
-            statusEinfahrt.textContent = 'Schranke offen';
-            statusEinfahrt.style.background = '#d4edda';
-            statusEinfahrt.style.color = '#155724';
-        } else {
-            statusEinfahrt.textContent = 'Schranke geschlossen';
-            statusEinfahrt.style.background = '#f8f9fa';
-            statusEinfahrt.style.color = '#333';
-        }
+        aktualisiereSchrankenText(ampelEinfahrt, statusEinfahrt);
+        aktualisiereSchrankenText(ampelAusfahrt, statusAusfahrt);
+    }
 
-        if (ampelAusfahrt.querySelector('.gruen').classList.contains('aktiv')) {
-            statusAusfahrt.textContent = 'Schranke offen';
-            statusAusfahrt.style.background = '#d4edda';
-            statusAusfahrt.style.color = '#155724';
-        } else {
-            statusAusfahrt.textContent = 'Schranke geschlossen';
-            statusAusfahrt.style.background = '#f8f9fa';
-            statusAusfahrt.style.color = '#333';
-        }
+    function aktualisiereSchrankenText(ampel, statusElement) {
+        const offen = ampel.querySelector(".gruen").classList.contains("aktiv");
+
+        statusElement.textContent = offen ? "Schranke offen" : "Schranke geschlossen";
+        statusElement.style.background = offen ? "#d4edda" : "#ffffff";
+        statusElement.style.color = offen ? "#155724" : "#2c3e50";
     }
 
     function setAmpelState(ampel, isOpen) {
-        const gruen = ampel.querySelector('.gruen');
-        const rot = ampel.querySelector('.rot');
+        const gruen = ampel.querySelector(".gruen");
+        const rot = ampel.querySelector(".rot");
 
-        if (isOpen) {
-            gruen.classList.add('aktiv');
-            rot.classList.remove('aktiv');
-        } else {
-            gruen.classList.remove('aktiv');
-            rot.classList.add('aktiv');
-        }
+        gruen.classList.toggle("aktiv", isOpen);
+        rot.classList.toggle("aktiv", !isOpen);
+    }
+
+    function oeffneSchranke(schrankeAmpel) {
+        setAmpelState(schrankeAmpel, true);
+        updateSchrankenAnzeige();
+
+        setTimeout(() => {
+            setAmpelState(schrankeAmpel, false);
+            updateSchrankenAnzeige();
+        }, 5000);
+    }
+
+    function validateKennzeichen(kennzeichen) {
+        return /^[A-Z]{1,2}-[0-9]{4}$/.test(kennzeichen.toUpperCase());
     }
 
     async function loadData() {
@@ -70,320 +124,206 @@ document.addEventListener('DOMContentLoaded', function() {
 
     async function loadAktiveParkvorgaenge() {
         try {
-            const response = await fetch('/api/parkvorgaenge/aktiv');
+            const response = await fetch("/api/parkvorgaenge/aktiv");
             const vorgaenge = await response.json();
-            parkhausBelegt = vorgaenge.length;
+            const belegung = synchronisiereParkplaetze(vorgaenge);
 
-            if (vorgaenge.length === 0) {
-                aktiveParkvorgaenge.innerHTML = '<div class="no-data">Keine Fahrzeuge im Parkhaus</div>';
-                return;
-            }
+            aktiveVorgaenge = vorgaenge.map(vorgang => ({
+                ...vorgang,
+                parkplatz: belegung[String(vorgang.id)]
+            }));
+            parkhausBelegt = aktiveVorgaenge.length;
 
-            aktiveParkvorgaenge.innerHTML = vorgaenge.map(v => `
-                <div class="parkvorgang-card">
-                    <h4>${v.kennzeichen}</h4>
-                    <div class="parkvorgang-info">
-                        <div><span>Einfahrt:</span> <span>${new Date(v.einfahrt_zeit).toLocaleTimeString('de-DE')}</span></div>
-                        <div><span>Dauer:</span> <span>${v.dauer_minuten} Min</span></div>
-                        <div><span>Kosten:</span> <span class="kosten-display">€${v.kosten.toFixed(2)}</span></div>
-                    </div>
-                    <button class="btn btn-primary btn-ausfahrt" data-kennzeichen="${v.kennzeichen}">🚪 Ausfahrt</button>
-                </div>
-            `).join('');
+            const pageCount = Math.max(1, Math.ceil(aktiveVorgaenge.length / PAGE_SIZE));
+            currentPage = Math.min(currentPage, pageCount);
 
-            document.querySelectorAll('.btn-ausfahrt').forEach(btn => {
-                btn.addEventListener('click', async (e) => {
-                    const kennzeichen = e.target.dataset.kennzeichen;
-                    await handleAusfahrt(kennzeichen);
-                });
-            });
+            renderAktiveFahrzeuge();
+            renderPagination(pageCount);
+            renderParkplaetze(belegung);
         } catch (error) {
-            console.error('Fehler beim Laden der Parkvorgänge:', error);
+            console.error("Fehler beim Laden der Parkvorgaenge:", error);
         }
     }
 
-    function validateKennzeichen(kennzeichen) {
-        const pattern = /^[A-Z]{1,2}-[0-9]{4}$/;
-        return pattern.test(kennzeichen.toUpperCase());
+    function renderAktiveFahrzeuge() {
+        if (aktiveVorgaenge.length === 0) {
+            aktiveParkvorgaenge.innerHTML = '<div class="no-data">Keine Fahrzeuge im Parkhaus</div>';
+            return;
+        }
+
+        const start = (currentPage - 1) * PAGE_SIZE;
+        const pageItems = aktiveVorgaenge.slice(start, start + PAGE_SIZE);
+
+        aktiveParkvorgaenge.innerHTML = pageItems.map(v => `
+            <div class="parkvorgang-card">
+                <h4>${v.kennzeichen}</h4>
+                <div class="parkvorgang-info">
+                    <div><strong>Einfahrt</strong>${new Date(v.einfahrt_zeit).toLocaleTimeString("de-DE")}</div>
+                    <div><strong>Dauer</strong>${v.dauer_minuten} Min</div>
+                    <div><strong>Preis</strong>EUR ${v.kosten.toFixed(2)}</div>
+                    <div><strong>Platz</strong>${v.parkplatz || "-"}</div>
+                </div>
+                <button class="btn btn-primary btn-ausfahrt" data-kennzeichen="${v.kennzeichen}">Ausfahrt</button>
+            </div>
+        `).join("");
     }
 
-    function oeffneSchranke(schrankeAmpel, statusElement) {
-        setAmpelState(schrankeAmpel, true);
-        updateSchrankenAnzeige();
+    function renderPagination(pageCount) {
+        if (pageCount <= 1) {
+            fahrzeugPagination.innerHTML = "";
+            return;
+        }
 
-        setTimeout(() => {
-            setAmpelState(schrankeAmpel, false);
-            updateSchrankenAnzeige();
-        }, 5000);
+        fahrzeugPagination.innerHTML = Array.from({ length: pageCount }, (_, index) => {
+            const page = index + 1;
+            const activeClass = page === currentPage ? " active" : "";
+            return `<button class="page-btn${activeClass}" type="button" data-page="${page}">${page}</button>`;
+        }).join("");
     }
 
-    btnHinzufuegen.addEventListener('click', async () => {
+    function renderParkplaetze(belegung) {
+        const platzNachId = Object.entries(belegung).reduce((result, [id, platz]) => {
+            result[platz] = id;
+            return result;
+        }, {});
+
+        parkingLot.innerHTML = Array.from({ length: MAX_PARKPLAETZE }, (_, index) => {
+            const platz = index + 1;
+            const occupied = Boolean(platzNachId[platz]);
+            return `
+                <div class="parking-space${occupied ? " occupied" : ""}">
+                    <span class="space-number">${platz}</span>
+                    <span class="space-led" title="${occupied ? "Belegt" : "Frei"}"></span>
+                </div>
+            `;
+        }).join("");
+    }
+
+    function handleAusfahrt(kennzeichen) {
+        const vorgang = aktiveVorgaenge.find(v => v.kennzeichen === kennzeichen);
+        if (!vorgang) {
+            alert("Dieses Fahrzeug ist nicht mehr in der aktiven Liste.");
+            loadData();
+            return;
+        }
+
+        pendingAusfahrtKennzeichen = kennzeichen;
+        showKostenModal(vorgang.kosten, vorgang.dauer_minuten);
+    }
+
+    function showKostenModal(kosten, dauerMinuten) {
+        kostenDetails.innerHTML = `
+            <div class="kosten-breakdown">
+                <div>Grundgebuehr: EUR 2.00</div>
+                <div>Dauer: ${dauerMinuten} Minuten</div>
+                <div>Zusatzkosten: EUR ${(kosten - 2.0).toFixed(2)}</div>
+                <div class="kosten-gesamt">Gesamt: EUR ${kosten.toFixed(2)}</div>
+            </div>
+        `;
+        kostenModal.style.display = "block";
+    }
+
+    btnHinzufuegen.addEventListener("click", async () => {
         const kennzeichen = kennzeichenInput.value.trim().toUpperCase();
+
         if (!kennzeichen) {
-            alert('Bitte geben Sie ein Kennzeichen ein.');
+            alert("Bitte geben Sie ein Kennzeichen ein.");
             return;
         }
+
         if (!validateKennzeichen(kennzeichen)) {
-            alert('Ungültiges Format! Verwenden Sie z.B. "AB-1234"');
+            alert('Ungueltiges Format! Verwenden Sie z.B. "AB-1234"');
             return;
         }
+
         if (parkhausBelegt >= MAX_PARKPLAETZE) {
-            alert('Parkhaus ist voll! Keine Einfahrt möglich.');
+            alert("Parkhaus ist voll! Keine Einfahrt moeglich.");
             return;
         }
 
         try {
-            const response = await fetch(`/api/parkvorgang/start/${kennzeichen}`, { method: 'POST' });
+            const response = await fetch(`/api/parkvorgang/start/${kennzeichen}`, { method: "POST" });
             const result = await response.json();
 
             if (response.ok) {
-                kennzeichenInput.value = '';
-                oeffneSchranke(ampelEinfahrt, statusEinfahrt);
+                kennzeichenInput.value = "";
+                oeffneSchranke(ampelEinfahrt);
                 await loadData();
             } else {
-                alert('❌ Fehler: ' + result.error);
+                alert("Fehler: " + result.error);
             }
         } catch (error) {
-            console.error('Fehler bei Hinzufügung:', error);
-            alert('❌ Netzwerkfehler');
+            console.error("Fehler bei Hinzufuegung:", error);
+            alert("Netzwerkfehler");
         }
     });
 
-    kennzeichenInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
+    kennzeichenInput.addEventListener("keypress", event => {
+        if (event.key === "Enter") {
             btnHinzufuegen.click();
         }
     });
 
-    async function handleAusfahrt(kennzeichen) {
+    aktiveParkvorgaenge.addEventListener("click", event => {
+        const button = event.target.closest(".btn-ausfahrt");
+        if (button) {
+            handleAusfahrt(button.dataset.kennzeichen);
+        }
+    });
+
+    fahrzeugPagination.addEventListener("click", event => {
+        const button = event.target.closest(".page-btn");
+        if (!button) {
+            return;
+        }
+
+        currentPage = Number(button.dataset.page);
+        renderAktiveFahrzeuge();
+        renderPagination(Math.max(1, Math.ceil(aktiveVorgaenge.length / PAGE_SIZE)));
+    });
+
+    btnBezahlen.addEventListener("click", async () => {
+        if (!pendingAusfahrtKennzeichen) {
+            kostenModal.style.display = "none";
+            return;
+        }
+
         try {
-            const response = await fetch(`/api/parkvorgang/end/${kennzeichen}`, { method: 'POST' });
+            const response = await fetch(`/api/parkvorgang/end/${pendingAusfahrtKennzeichen}`, { method: "POST" });
             const result = await response.json();
 
             if (response.ok) {
-                oeffneSchranke(ampelAusfahrt, statusAusfahrt);
+                kostenModal.style.display = "none";
+                pendingAusfahrtKennzeichen = null;
+                oeffneSchranke(ampelAusfahrt);
                 await loadData();
             } else {
-                alert('❌ Fehler: ' + result.error);
+                alert("Fehler: " + result.error);
             }
         } catch (error) {
-            console.error('Fehler bei Ausfahrt:', error);
-            alert('❌ Netzwerkfehler');
+            console.error("Fehler bei Ausfahrt:", error);
+            alert("Netzwerkfehler");
         }
-    }
-
-    const demoBtn = document.createElement('button');
-    demoBtn.textContent = '🎯 Demo: Zufälliges Kennzeichen einfügen';
-    demoBtn.className = 'btn btn-secondary';
-    demoBtn.style.marginTop = '10px';
-    demoBtn.addEventListener('click', () => {
-        const kennzeichen = ['AB-1234', 'CD-5678', 'EF-9012', 'GH-3456'][Math.floor(Math.random() * 4)];
-        kennzeichenInput.value = kennzeichen;
     });
-    document.querySelector('.kennzeichen-input-section').appendChild(demoBtn);
+
+    btnModalClose.addEventListener("click", () => {
+        kostenModal.style.display = "none";
+        pendingAusfahrtKennzeichen = null;
+    });
+
+    const demoBtn = document.createElement("button");
+    demoBtn.textContent = "Demo: Zufallskennzeichen";
+    demoBtn.className = "btn btn-secondary";
+    demoBtn.style.marginTop = "10px";
+    demoBtn.addEventListener("click", () => {
+        const buchstaben = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const prefix = buchstaben[Math.floor(Math.random() * buchstaben.length)] +
+            buchstaben[Math.floor(Math.random() * buchstaben.length)];
+        const nummer = String(Math.floor(Math.random() * 9000) + 1000);
+        kennzeichenInput.value = `${prefix}-${nummer}`;
+    });
+    document.querySelector(".kennzeichen-input-section").appendChild(demoBtn);
 
     loadData();
-    setInterval(loadData, 5000);
-});
-
-
-    // Registrierte Fahrzeuge laden
-    async function loadRegistrierteFahrzeuge() {
-        try {
-            const response = await fetch('/api/fahrzeuge');
-            const fahrzeuge = await response.json();
-
-            if (fahrzeuge.length === 0) {
-                registrierteFahrzeuge.innerHTML = '<div class="no-data">Keine Fahrzeuge registriert</div>';
-                return;
-            }
-
-            registrierteFahrzeuge.innerHTML = fahrzeuge.map(f => `
-                <div class="fahrzeug-card">
-                    <div>
-                        <span class="kennzeichen">${f.kennzeichen}</span>
-                        ${f.name ? `<span class="name"> - ${f.name}</span>` : ''}
-                    </div>
-                    <span class="status">${f.status}</span>
-                </div>
-            `).join('');
-        } catch (error) {
-            console.error('Fehler beim Laden der Fahrzeuge:', error);
-        }
-    }
-
-    // Kennzeichen simulieren (für Demo)
-    function simulateKennzeichen() {
-        const kennzeichen = ['AB-CD 123', 'XY-ZW 456', 'MN-OP 789'][Math.floor(Math.random() * 3)];
-        showKennzeichen(kennzeichen);
-    }
-
-    // Kennzeichen anzeigen
-    function showKennzeichen(kennzeichen) {
-        aktuellesKennzeichen = kennzeichen;
-        kennzeichenDisplay.innerHTML = `
-            <div class="kennzeichen-erkannt">
-                ${kennzeichen}
-            </div>
-        `;
-
-        // Buttons aktivieren
-        btnEinfahrt.disabled = false;
-        btnAusfahrt.disabled = false;
-
-        // Timer starten (für Demo)
-        startTimer();
-    }
-
-    // Timer für Kostenberechnung
-    function startTimer() {
-        if (timerInterval) clearInterval(timerInterval);
-
-        const startTime = Date.now();
-        timerInterval = setInterval(() => {
-            const elapsed = Date.now() - startTime;
-            const seconds = Math.floor(elapsed / 1000);
-            const kosten = 2.0 + Math.floor(seconds / 20) * 1.0;
-
-            // Live-Kosten-Update in der Anzeige
-            const kennzeichenElement = kennzeichenDisplay.querySelector('.kennzeichen-erkannt');
-            if (kennzeichenElement) {
-                kennzeichenElement.innerHTML = `
-                    ${aktuellesKennzeichen}<br>
-                    <small>Dauer: ${Math.floor(seconds / 60)}:${(seconds % 60).toString().padStart(2, '0')} | Kosten: €${kosten.toFixed(2)}</small>
-                `;
-            }
-        }, 1000);
-    }
-
-    // Einfahrt erlauben
-    btnEinfahrt.addEventListener('click', async () => {
-        if (!aktuellesKennzeichen) return;
-
-        try {
-            const response = await fetch(`/api/parkvorgang/start/${aktuellesKennzeichen}`, {
-                method: 'POST'
-            });
-            const result = await response.json();
-
-            if (response.ok) {
-                alert('✅ Einfahrt erlaubt! Schranke öffnet sich.');
-                resetKennzeichen();
-                loadData();
-            } else {
-                alert('❌ Fehler: ' + result.error);
-            }
-        } catch (error) {
-            console.error('Fehler bei Einfahrt:', error);
-            alert('❌ Netzwerkfehler');
-        }
-    });
-
-    // Ausfahrt bestätigen
-    btnAusfahrt.addEventListener('click', async () => {
-        if (!aktuellesKennzeichen) return;
-
-        try {
-            const response = await fetch(`/api/parkvorgang/end/${aktuellesKennzeichen}`, {
-                method: 'POST'
-            });
-            const result = await response.json();
-
-            if (response.ok) {
-                showKostenModal(result.kosten, result.dauer_minuten);
-            } else {
-                alert('❌ Fehler: ' + result.error);
-            }
-        } catch (error) {
-            console.error('Fehler bei Ausfahrt:', error);
-            alert('❌ Netzwerkfehler');
-        }
-    });
-
-    // Kosten-Modal anzeigen
-    function showKostenModal(kosten, dauerMinuten) {
-        kostenDetails.innerHTML = `
-            <div class="kosten-breakdown">
-                <div>Grundgebühr: €2.00</div>
-                <div>Dauer: ${dauerMinuten} Minuten</div>
-                <div>Zusatzkosten: €${(kosten - 2.0).toFixed(2)} (1€ pro 20 Sek)</div>
-                <div class="kosten-gesamt">Gesamt: €${kosten.toFixed(2)}</div>
-            </div>
-        `;
-        kostenModal.style.display = 'block';
-    }
-
-    // Bezahlung bestätigen
-    btnBezahlen.addEventListener('click', () => {
-        alert('✅ Bezahlung bestätigt! Schranke öffnet sich.');
-        kostenModal.style.display = 'none';
-        resetKennzeichen();
-        loadData();
-    });
-
-    // Modal schließen
-    btnModalClose.addEventListener('click', () => {
-        kostenModal.style.display = 'none';
-    });
-
-    // Fahrzeug registrieren
-    fahrzeugForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-
-        const kennzeichen = document.getElementById('kennzeichen-input').value.toUpperCase();
-        const name = document.getElementById('name-input').value;
-
-        try {
-            const response = await fetch('/api/fahrzeuge', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ kennzeichen, name })
-            });
-            const result = await response.json();
-
-            if (response.ok) {
-                alert('✅ Fahrzeug erfolgreich registriert!');
-                fahrzeugForm.reset();
-                loadData();
-            } else {
-                alert('❌ Fehler: ' + result.error);
-            }
-        } catch (error) {
-            console.error('Fehler bei Registrierung:', error);
-            alert('❌ Netzwerkfehler');
-        }
-    });
-
-    // Kennzeichen zurücksetzen
-    function resetKennzeichen() {
-        aktuellesKennzeichen = null;
-        kennzeichenDisplay.innerHTML = `
-            <div class="kennzeichen-placeholder">
-                <span>Warten auf Kennzeichen...</span>
-            </div>
-        `;
-        btnEinfahrt.disabled = true;
-        btnAusfahrt.disabled = true;
-
-        if (timerInterval) {
-            clearInterval(timerInterval);
-            timerInterval = null;
-        }
-    }
-
-    // Demo-Button für Kennzeichen-Simulation (entfernen im Produktivcode)
-    const demoBtn = document.createElement('button');
-    demoBtn.textContent = '🎯 Demo: Zufälliges Kennzeichen simulieren';
-    demoBtn.className = 'btn btn-secondary';
-    demoBtn.style.marginTop = '10px';
-    demoBtn.addEventListener('click', simulateKennzeichen);
-    kennzeichenDisplay.parentNode.appendChild(demoBtn);
-
-    // Initiale Daten laden
-    loadData();
-
-    // Live-Updates alle 5 Sekunden
     setInterval(loadData, 5000);
 });
