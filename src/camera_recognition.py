@@ -28,6 +28,7 @@ class CameraPlateRecognizer:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._templates: dict[str, list[Any]] = {}
+        self._latest_jpeg: bytes = b""
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -46,6 +47,10 @@ class CameraPlateRecognizer:
                 "updated_at": self._state.updated_at,
             }
 
+    def get_jpeg(self) -> bytes:
+        with self._lock:
+            return self._latest_jpeg
+
     def _set_state(self, *, plate: str | None = None, status: str | None = None, active: bool | None = None) -> None:
         with self._lock:
             if plate is not None:
@@ -55,6 +60,10 @@ class CameraPlateRecognizer:
             if active is not None:
                 self._state.active = active
             self._state.updated_at = time.time()
+
+    def _set_jpeg(self, jpeg: bytes) -> None:
+        with self._lock:
+            self._latest_jpeg = jpeg
 
     def _run(self) -> None:
         try:
@@ -85,6 +94,7 @@ class CameraPlateRecognizer:
                     continue
 
                 detected = self._detect_plate(frame, cv2)
+                self._update_preview(frame, detected, cv2)
                 if detected and detected == stable_plate:
                     stable_hits += 1
                 elif detected:
@@ -102,6 +112,23 @@ class CameraPlateRecognizer:
         finally:
             camera.release()
             self._set_state(status="Kamera beendet", active=False)
+
+    def _update_preview(self, frame: Any, detected: str, cv2: Any) -> None:
+        preview = frame.copy()
+        height, width = preview.shape[:2]
+        guide_x1 = int(width * 0.18)
+        guide_x2 = int(width * 0.82)
+        guide_y1 = int(height * 0.36)
+        guide_y2 = int(height * 0.64)
+        cv2.rectangle(preview, (guide_x1, guide_y1), (guide_x2, guide_y2), (52, 152, 219), 2)
+
+        label = f"Erkannt: {detected}" if detected else "Kennzeichen in den blauen Rahmen halten"
+        cv2.rectangle(preview, (0, 0), (width, 42), (44, 62, 80), -1)
+        cv2.putText(preview, label, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+
+        ok, encoded = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        if ok:
+            self._set_jpeg(encoded.tobytes())
 
     def _detect_plate(self, frame: Any, cv2: Any) -> str:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)

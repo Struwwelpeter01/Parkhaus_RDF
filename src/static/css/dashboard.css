@@ -123,6 +123,37 @@ header h1 {
     background: linear-gradient(45deg, #95a5a6, #7f8c8d);
 }
 
+.camera-window {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border: 2px solid rgba(52, 152, 219, 0.35);
+    border-radius: 8px;
+    background: #1f2d3a;
+}
+
+.camera-window img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.camera-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 12px;
+    color: #5d6d7e;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.camera-meta span {
+    min-width: 0;
+}
+
 .status-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -364,6 +395,10 @@ header h1 {
     .status-grid,
     .parking-lot {
         grid-template-columns: 1fr;
+    }
+
+    .camera-meta {
+        flex-direction: column;
     }
 
     .parkvorgang-card {

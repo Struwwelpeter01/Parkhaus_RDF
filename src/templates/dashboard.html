@@ -25,6 +25,17 @@
                     </div>
                 </div>
 
+                <div class="panel camera-panel">
+                    <h2>Kamera-Ansicht</h2>
+                    <div class="camera-window">
+                        <img src="{{ url_for('get_kamera_stream') }}" alt="Livebild der Kamera" id="kamera-stream">
+                    </div>
+                    <div class="camera-meta">
+                        <span id="kamera-status">Kamera wird gestartet</span>
+                        <span id="kamera-kennzeichen">Erkannt: -</span>
+                    </div>
+                </div>
+
                 <div class="panel">
                     <h2>Parkhaus-Status</h2>
                     <div class="status-grid">

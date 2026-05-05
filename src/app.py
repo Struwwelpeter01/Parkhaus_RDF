@@ -1,8 +1,9 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, Response, render_template, request, jsonify
 import sqlite3
 from datetime import datetime
 import json
 import os
+import time
 from camera_recognition import camera_recognizer
 
 # Flask-App mit korrekten Pfaden initialisieren
@@ -52,6 +53,20 @@ def dashboard():
 @app.route('/api/kamera/kennzeichen', methods=['GET'])
 def get_kamera_kennzeichen():
     return jsonify(camera_recognizer.get_state())
+
+@app.route('/api/kamera/stream')
+def get_kamera_stream():
+    def generate():
+        while True:
+            frame = camera_recognizer.get_jpeg()
+            if frame:
+                yield (
+                    b'--frame\r\n'
+                    b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
+                )
+            time.sleep(0.08)
+
+    return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
 # API: Alle Fahrzeuge abrufen (für Debugging/Entwicklung)
 @app.route('/api/fahrzeuge', methods=['GET'])

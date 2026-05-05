@@ -14,6 +14,8 @@ document.addEventListener("DOMContentLoaded", function () {
     const kostenDetails = document.getElementById("kosten-details");
     const btnBezahlen = document.getElementById("btn-bezahlen");
     const btnModalClose = document.getElementById("btn-modal-close");
+    const kameraStatus = document.getElementById("kamera-status");
+    const kameraKennzeichen = document.getElementById("kamera-kennzeichen");
 
     const MAX_PARKPLAETZE = 15;
     const PAGE_SIZE = 5;
@@ -124,6 +126,9 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch("/api/kamera/kennzeichen");
             const result = await response.json();
             const plate = (result.plate || "").trim().toUpperCase();
+
+            kameraStatus.textContent = result.status || "Kamera aktiv";
+            kameraKennzeichen.textContent = `Erkannt: ${plate || "-"}`;
 
             if (!plate || plate === ignoredCameraPlate || plate === lastCameraPlate) {
                 return;
