@@ -11,6 +11,7 @@ class CameraSource:
         self.height = height
         self.source = source
         self.kind = ""
+        self._pi_format = ""
         self._camera: Any = None
 
     def __enter__(self) -> "CameraSource":
@@ -18,11 +19,10 @@ class CameraSource:
             from picamera2 import Picamera2
 
             camera = Picamera2()
-            config = camera.create_preview_configuration(
-                main={"size": (self.width, self.height), "format": "RGB888"}
-            )
+            config = self._create_pi_config(camera)
             camera.configure(config)
             camera.start()
+            self._apply_pi_controls(camera)
             self._camera = camera
             self.kind = "picamera2"
             return self
@@ -55,12 +55,48 @@ class CameraSource:
         self._camera = None
         self.kind = ""
 
+    def _create_pi_config(self, camera: Any) -> Any:
+        try:
+            config = camera.create_preview_configuration(
+                main={"size": (self.width, self.height), "format": "BGR888"}
+            )
+            self._pi_format = "BGR888"
+            return config
+        except Exception:
+            config = camera.create_preview_configuration(
+                main={"size": (self.width, self.height), "format": "RGB888"}
+            )
+            self._pi_format = "RGB888"
+            return config
+
+    def _apply_pi_controls(self, camera: Any) -> None:
+        controls_to_set: dict[str, Any] = {
+            "AwbEnable": True,
+        }
+
+        try:
+            from libcamera import controls
+
+            controls_to_set["AwbMode"] = controls.AwbModeEnum.Auto
+            controls_to_set["AfMode"] = controls.AfModeEnum.Continuous
+        except Exception:
+            pass
+
+        try:
+            camera.set_controls(controls_to_set)
+        except Exception:
+            pass
+
     def read(self) -> Any:
         if self.kind == "picamera2":
             import cv2
 
             frame = self._camera.capture_array()
-            return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            if self._pi_format == "RGB888":
+                return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            if frame.shape[2] == 3:
+                return frame
+            return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
 
         ok, frame = self._camera.read()
         if not ok:
