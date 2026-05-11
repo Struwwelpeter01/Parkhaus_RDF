@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from camera_source import CameraSource
+
 
 PLATE_REGEX = re.compile(r"^[A-Z]{1,2}-[0-9]{4}$")
 
@@ -73,22 +75,21 @@ class CameraPlateRecognizer:
             return
 
         self._templates = self._build_templates(cv2)
-        camera = cv2.VideoCapture(self.source)
-        camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-        camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-
-        if not camera.isOpened():
-            self._set_state(status="Laptop-Kamera konnte nicht geoeffnet werden", active=False)
+        try:
+            camera = CameraSource(self.width, self.height, self.source).__enter__()
+        except RuntimeError as error:
+            self._set_state(status=str(error), active=False)
             return
 
-        self._set_state(status="Kamera aktiv", active=True)
+        self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
         stable_plate = ""
         stable_hits = 0
 
         try:
             while not self._stop_event.is_set():
-                ok, frame = camera.read()
-                if not ok:
+                try:
+                    frame = camera.read()
+                except RuntimeError:
                     self._set_state(status="Kamerabild konnte nicht gelesen werden", active=False)
                     time.sleep(0.5)
                     continue
@@ -106,11 +107,11 @@ class CameraPlateRecognizer:
                 if detected and stable_hits >= 2:
                     self._set_state(plate=detected, status="Kennzeichen erkannt", active=True)
                 else:
-                    self._set_state(status="Kamera aktiv", active=True)
+                    self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
 
                 time.sleep(0.15)
         finally:
-            camera.release()
+            camera.close()
             self._set_state(status="Kamera beendet", active=False)
 
     def _update_preview(self, frame: Any, detected: str, cv2: Any) -> None:

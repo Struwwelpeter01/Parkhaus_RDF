@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Any
 
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+SRC_PATH = PROJECT_ROOT / "src"
+if str(SRC_PATH) not in sys.path:
+    sys.path.insert(0, str(SRC_PATH))
+
+from camera_source import CameraSource
+
+
 PLATE_PATTERN = re.compile(r"[^A-Z0-9_-]+")
 
 
@@ -37,64 +45,6 @@ def append_manifest(manifest_path: Path, row: dict[str, str]) -> None:
         writer.writerow(row)
 
 
-class Camera:
-    def __init__(self, width: int, height: int, source: int) -> None:
-        self.width = width
-        self.height = height
-        self.source = source
-        self.kind = ""
-        self._camera: Any = None
-
-    def __enter__(self) -> "Camera":
-        try:
-            from picamera2 import Picamera2
-
-            camera = Picamera2()
-            config = camera.create_preview_configuration(
-                main={"size": (self.width, self.height), "format": "RGB888"}
-            )
-            camera.configure(config)
-            camera.start()
-            self._camera = camera
-            self.kind = "picamera2"
-            return self
-        except Exception as pi_error:
-            try:
-                import cv2
-
-                camera = cv2.VideoCapture(self.source)
-                camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
-                camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-                if not camera.isOpened():
-                    raise RuntimeError("OpenCV konnte keine Kamera oeffnen.")
-                self._camera = camera
-                self.kind = "opencv"
-                return self
-            except Exception as cv_error:
-                raise RuntimeError(
-                    "Keine Kamera gefunden. Auf dem Raspberry Pi bitte picamera2 installieren "
-                    "und die Kamera aktivieren."
-                ) from cv_error
-
-    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
-        if self.kind == "picamera2":
-            self._camera.stop()
-        elif self.kind == "opencv":
-            self._camera.release()
-
-    def read(self) -> Any:
-        if self.kind == "picamera2":
-            import cv2
-
-            frame = self._camera.capture_array()
-            return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-        ok, frame = self._camera.read()
-        if not ok:
-            raise RuntimeError("Kamerabild konnte nicht gelesen werden.")
-        return frame
-
-
 def save_frame(frame: Any, target: Path) -> None:
     import cv2
 
@@ -117,6 +67,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=0, help="Nach N Bildern automatisch beenden.")
     parser.add_argument("--warmup", type=float, default=1.5, help="Sekunden warten, bis Kamera hell ist.")
     parser.add_argument("--no-preview", action="store_true", help="Ohne Vorschaufenster arbeiten.")
+    parser.add_argument(
+        "--button-gpio",
+        type=int,
+        default=0,
+        help="BCM-GPIO-Pin fuer einen physischen Taster. Jeder Tastendruck speichert ein Bild.",
+    )
     return parser.parse_args()
 
 
@@ -132,11 +88,30 @@ def main() -> int:
         print("OpenCV fehlt. Installiere es auf dem Pi mit: sudo apt install python3-opencv")
         return 2
 
+    button = None
+    button_pressed = False
+    if args.button_gpio:
+        try:
+            from gpiozero import Button
+
+            button = Button(args.button_gpio, pull_up=True, bounce_time=0.15)
+
+            def mark_button_pressed() -> None:
+                nonlocal button_pressed
+                button_pressed = True
+
+            button.when_pressed = mark_button_pressed
+        except ImportError:
+            print("gpiozero fehlt. Installiere es mit: sudo apt install python3-gpiozero")
+            return 2
+
     print("Starte Kamera...")
-    with Camera(args.width, args.height, args.source) as camera:
+    with CameraSource(args.width, args.height, args.source) as camera:
         time.sleep(args.warmup)
         print(f"Kamera: {camera.kind}")
         print("Tasten: s = Bild speichern, q = beenden")
+        if button:
+            print(f"GPIO-Taster: BCM {args.button_gpio} speichert ein Bild")
         if args.interval > 0:
             print(f"Automatik: alle {args.interval:g} Sekunden speichern")
 
@@ -151,7 +126,7 @@ def main() -> int:
                 preview = frame.copy()
                 cv2.putText(
                     preview,
-                    f"{plate} | gespeichert: {saved} | s=speichern q=ende",
+                    f"{plate} | gespeichert: {saved} | s/GPIO=speichern q=ende",
                     (20, 36),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.8,
@@ -172,6 +147,10 @@ def main() -> int:
             if args.interval > 0 and time.monotonic() >= next_auto_save:
                 should_save = True
                 next_auto_save = time.monotonic() + args.interval
+
+            if button_pressed:
+                should_save = True
+                button_pressed = False
 
             if should_save:
                 image_path = output_dir / f"{plate}_{timestamp()}_{saved + 1:04d}.jpg"
