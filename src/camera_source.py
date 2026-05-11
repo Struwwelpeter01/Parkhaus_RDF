@@ -13,7 +13,7 @@ class CameraSource:
         self.source = source
         self.kind = ""
         self._pi_format = ""
-        self._color_fix = os.getenv("PARKHAUS_CAMERA_COLOR_FIX", "warm").strip().lower()
+        self._color_fix = os.getenv("PARKHAUS_CAMERA_COLOR_FIX", "swap_rb").strip().lower()
         self._red_gain = self._read_float_env("PARKHAUS_CAMERA_RED_GAIN", 1.18)
         self._blue_gain = self._read_float_env("PARKHAUS_CAMERA_BLUE_GAIN", 0.88)
         self._camera: Any = None
