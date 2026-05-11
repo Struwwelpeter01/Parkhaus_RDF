@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 
@@ -12,6 +13,9 @@ class CameraSource:
         self.source = source
         self.kind = ""
         self._pi_format = ""
+        self._color_fix = os.getenv("PARKHAUS_CAMERA_COLOR_FIX", "warm").strip().lower()
+        self._red_gain = self._read_float_env("PARKHAUS_CAMERA_RED_GAIN", 1.18)
+        self._blue_gain = self._read_float_env("PARKHAUS_CAMERA_BLUE_GAIN", 0.88)
         self._camera: Any = None
 
     def __enter__(self) -> "CameraSource":
@@ -77,7 +81,7 @@ class CameraSource:
         try:
             from libcamera import controls
 
-            controls_to_set["AwbMode"] = controls.AwbModeEnum.Auto
+            controls_to_set["AwbMode"] = controls.AwbModeEnum.Indoor
             controls_to_set["AfMode"] = controls.AfModeEnum.Continuous
         except Exception:
             pass
@@ -87,16 +91,39 @@ class CameraSource:
         except Exception:
             pass
 
+    def _read_float_env(self, name: str, default: float) -> float:
+        try:
+            return float(os.getenv(name, str(default)).replace(",", "."))
+        except ValueError:
+            return default
+
+    def _apply_color_fix(self, frame: Any, cv2: Any) -> Any:
+        if self._color_fix in {"none", "off", "false", "0"}:
+            return frame
+
+        if self._color_fix in {"swap", "swap_rb", "rgb"}:
+            return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+        if self._color_fix == "warm":
+            blue, green, red = cv2.split(frame)
+            blue = cv2.convertScaleAbs(blue, alpha=self._blue_gain)
+            red = cv2.convertScaleAbs(red, alpha=self._red_gain)
+            return cv2.merge((blue, green, red))
+
+        return frame
+
     def read(self) -> Any:
         if self.kind == "picamera2":
             import cv2
 
             frame = self._camera.capture_array()
             if self._pi_format == "RGB888":
-                return cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                return self._apply_color_fix(frame, cv2)
             if frame.shape[2] == 3:
-                return frame
-            return cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                return self._apply_color_fix(frame, cv2)
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+            return self._apply_color_fix(frame, cv2)
 
         ok, frame = self._camera.read()
         if not ok:
