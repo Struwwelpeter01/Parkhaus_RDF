@@ -1,0 +1,6 @@
+names:
+- license_plate
+nc: 1
+path: C:\Users\z00431uw\Desktop\RDF\IT_Malassa\Projektarbeit_2 Parkhaus\Parkhaus_RDF\data
+train: train/images
+val: val/images
