@@ -1,0 +1,53 @@
+ESP32-C6 Pinbelegung
+
+
+EINGAENGE
+
+GPIO2  - Signal vom Raspberry Pi: Schranke Einfahrt oeffnen
+GPIO3  - Signal vom Raspberry Pi: Schranke Ausfahrt oeffnen
+
+
+AUSGAENGE
+
+GPIO4  - PWM Servo Einfahrt
+GPIO5  - PWM Servo Ausfahrt
+
+GPIO15 - LED Einfahrt rot
+GPIO18 - LED Einfahrt gruen
+
+GPIO19 - LED Ausfahrt rot
+GPIO20 - LED Ausfahrt gruen
+
+
+VERDRAHTUNG EINGAENGE MIT RASPBERRY PI
+
+Raspberry-Ausgang Einfahrt ---- GPIO2 am ESP32-C6
+Raspberry-Ausgang Ausfahrt  ---- GPIO3 am ESP32-C6
+
+GPIO2 ---- 10-kOhm-Widerstand ---- GND
+GPIO3 ---- 10-kOhm-Widerstand ---- GND
+
+Raspberry Pi GND ---- ESP32-C6 GND
+
+Der Raspberry Pi gibt beim erkannten Auto kurz 3.3 V/HIGH aus.
+Im Code muss dafuer SIGNAL_AKTIV_HIGH = True eingestellt sein.
+
+
+TEST IN WOKWI MIT PUSHBUTTONS
+
+GPIO2 ---- Taster ---- 3V3
+GPIO3 ---- Taster ---- 3V3
+
+GPIO2 ---- 10-kOhm-Widerstand ---- GND
+GPIO3 ---- 10-kOhm-Widerstand ---- GND
+
+Debug-Test, wenn DEBUG_EINGAENGE = True:
+Nicht gedrueckt muss in der Konsole stehen: 0
+Gedrueckt muss in der Konsole stehen: 1
+
+
+HINWEIS
+
+Raspberry Pi, ESP32-C6 und Servo-Netzteil muessen eine gemeinsame Masse/GND haben.
+Die Signale vom Raspberry Pi zum ESP32-C6 duerfen nur 3.3 V haben.
+Die Servos werden nicht ueber den ESP32-C6 versorgt, sondern ueber das externe 5-V-Netzteil.
