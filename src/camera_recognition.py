@@ -16,6 +16,7 @@ PLATE_REGEX = re.compile(r"^[A-Z]-[0-9]{4}$")
 @dataclass
 class CameraState:
     plate: str = ""
+    ocr_raw: str = ""
     status: str = "Kamera nicht gestartet"
     active: bool = False
     updated_at: float = 0.0
@@ -35,6 +36,7 @@ class CameraPlateRecognizer:
         self._yolo_model = None
         self._ocr_reader = None
         self._use_yolo = False
+        self._last_ocr_raw = ""
         
         # Versuche YOLO11-Modell zu laden
         self._load_yolo_model()
@@ -107,6 +109,7 @@ class CameraPlateRecognizer:
         with self._lock:
             return {
                 "plate": self._state.plate,
+                "ocr_raw": self._state.ocr_raw,
                 "status": self._state.status,
                 "active": self._state.active,
                 "updated_at": self._state.updated_at,
@@ -116,10 +119,19 @@ class CameraPlateRecognizer:
         with self._lock:
             return self._latest_jpeg
 
-    def _set_state(self, *, plate: str | None = None, status: str | None = None, active: bool | None = None) -> None:
+    def _set_state(
+        self,
+        *,
+        plate: str | None = None,
+        ocr_raw: str | None = None,
+        status: str | None = None,
+        active: bool | None = None,
+    ) -> None:
         with self._lock:
             if plate is not None:
                 self._state.plate = plate
+            if ocr_raw is not None:
+                self._state.ocr_raw = ocr_raw
             if status is not None:
                 self._state.status = status
             if active is not None:
@@ -162,6 +174,28 @@ class CameraPlateRecognizer:
                 
                 # Unterschiedliche Logik für YOLO vs. Template Matching
                 if self._use_yolo and self._yolo_model:
+                    if detected and detected != "ERKANNT":
+                        self._set_state(
+                            plate=detected,
+                            ocr_raw=self._last_ocr_raw,
+                            status=f"Kennzeichen erkannt: {detected}",
+                            active=True,
+                        )
+                    elif detected == "ERKANNT":
+                        if self._ocr_reader is None:
+                            status = "Kennzeichen erkannt, aber EasyOCR ist nicht geladen"
+                        elif self._last_ocr_raw:
+                            status = f"Kennzeichen erkannt, OCR-Rohtext: {self._last_ocr_raw}"
+                        else:
+                            status = "Kennzeichen erkannt, OCR konnte den Text nicht lesen"
+
+                        self._set_state(plate="", ocr_raw=self._last_ocr_raw, status=status, active=True)
+                    else:
+                        self._set_state(plate="", ocr_raw="", status="Kennzeichen nicht erkannt", active=True)
+
+                    time.sleep(0.15)
+                    continue
+
                     # YOLO11-Modus mit OCR
                     if detected and detected != "ERKANNT":
                         # OCR hat ein Kennzeichen gelesen
@@ -250,6 +284,7 @@ class CameraPlateRecognizer:
         """
         try:
             # YOLO-Inferenz durchführen
+            self._last_ocr_raw = ""
             results = self._yolo_model.predict(
                 source=frame,
                 conf=0.5,  # Confidence Threshold
@@ -306,6 +341,7 @@ class CameraPlateRecognizer:
 
             best_plate = ""
             best_score = 0.0
+            raw_texts: list[str] = []
 
             for prepared in self._prepare_plate_for_ocr(plate_image, cv2):
                 results = self._ocr_reader.readtext(
@@ -313,13 +349,21 @@ class CameraPlateRecognizer:
                     allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ",
                     detail=1,
                     paragraph=False,
+                    text_threshold=0.3,
+                    low_text=0.2,
+                    width_ths=0.7,
                 )
 
                 for raw_text, confidence in self._ocr_candidates(results):
+                    if raw_text.strip():
+                        raw_texts.append(raw_text.strip())
                     plate = self._normalize_plate_text(raw_text)
                     if plate and confidence >= best_score:
                         best_plate = plate
                         best_score = confidence
+
+            unique_raw_texts = list(dict.fromkeys(raw_texts))
+            self._last_ocr_raw = " | ".join(unique_raw_texts[:3])
 
             return best_plate
             

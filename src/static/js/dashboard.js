@@ -126,6 +126,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch("/api/kamera/kennzeichen");
             const result = await response.json();
             const plate = (result.plate || "").trim().toUpperCase();
+            const ocrRaw = (result.ocr_raw || "").trim();
 
             kameraStatus.textContent = result.status || "Kamera aktiv";
             
@@ -137,6 +138,9 @@ document.addEventListener("DOMContentLoaded", function () {
             } else if (plate === "ERKANNT") {
                 // Nur YOLO erkannt, OCR lädt noch
                 kameraKennzeichen.textContent = "🔄 Kennzeichen erkannt (OCR lädt...)";
+                kameraKennzeichen.style.color = "#f39c12";
+            } else if (ocrRaw) {
+                kameraKennzeichen.textContent = `OCR-Rohtext: ${ocrRaw}`;
                 kameraKennzeichen.style.color = "#f39c12";
             } else if (result.status && result.status.includes("nicht erkannt")) {
                 kameraKennzeichen.textContent = "❌ Kennzeichen nicht erkannt";
