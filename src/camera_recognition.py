@@ -5,11 +5,12 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any
+from pathlib import Path
 
 from camera_source import CameraSource
 
 
-PLATE_REGEX = re.compile(r"^[A-Z]{1,2}-[0-9]{4}$")
+PLATE_REGEX = re.compile(r"^[A-Z]-[0-9]{4}$")
 
 
 @dataclass
@@ -31,6 +32,68 @@ class CameraPlateRecognizer:
         self._stop_event = threading.Event()
         self._templates: dict[str, list[Any]] = {}
         self._latest_jpeg: bytes = b""
+        self._yolo_model = None
+        self._ocr_reader = None
+        self._use_yolo = False
+        
+        # Versuche YOLO11-Modell zu laden
+        self._load_yolo_model()
+        
+        # Versuche EasyOCR zu laden
+        self._load_ocr_reader()
+
+    def _load_yolo_model(self) -> None:
+        """Versucht das trainierte YOLO11-Modell zu laden"""
+        try:
+            from ultralytics import YOLO
+            
+            # Pfad zum trainierten Modell
+            project_root = Path(__file__).parent.parent
+            model_path = project_root / "runs" / "detect" / "license_plate_detection" / "weights" / "best.pt"
+            
+            # Alternatives Verzeichnis wenn obiges nicht existiert
+            if not model_path.exists():
+                # Suche nach dem Verzeichnis (könnte auch -3, -4 etc. sein)
+                detect_dir = project_root / "runs" / "detect"
+                if detect_dir.exists():
+                    for sub_dir in sorted(detect_dir.iterdir(), reverse=True):
+                        alt_model = sub_dir / "weights" / "best.pt"
+                        if alt_model.exists():
+                            model_path = alt_model
+                            break
+            
+            if model_path.exists():
+                print(f"📦 Lade YOLO11-Modell: {model_path}")
+                self._yolo_model = YOLO(str(model_path))
+                self._use_yolo = True
+                print("✅ YOLO11-Modell erfolgreich geladen!")
+            else:
+                print(f"⚠️  YOLO11-Modell nicht gefunden: {model_path}")
+                self._use_yolo = False
+                
+        except ImportError:
+            print("⚠️  ultralytics nicht installiert - verwende Template Matching")
+            self._use_yolo = False
+        except Exception as e:
+            print(f"⚠️  Fehler beim Laden von YOLO11: {e}")
+            self._use_yolo = False
+
+    def _load_ocr_reader(self) -> None:
+        """Versucht EasyOCR für Kennzeichen-Lesefunktion zu laden"""
+        try:
+            import easyocr
+            
+            print("📦 Lade EasyOCR Reader für Kennzeichenerkennung...")
+            # Lade Reader für Deutsch und Englisch (für deutsche/englische Kennzeichen)
+            self._ocr_reader = easyocr.Reader(['de', 'en'], gpu=False)
+            print("✅ EasyOCR Reader erfolgreich geladen!")
+            
+        except ImportError:
+            print("⚠️  easyocr nicht installiert - Kennzeichen-Text wird nicht gelesen")
+            self._ocr_reader = None
+        except Exception as e:
+            print(f"⚠️  Fehler beim Laden von EasyOCR: {e}")
+            self._ocr_reader = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -96,18 +159,33 @@ class CameraPlateRecognizer:
 
                 detected = self._detect_plate(frame, cv2)
                 self._update_preview(frame, detected, cv2)
-                if detected and detected == stable_plate:
-                    stable_hits += 1
-                elif detected:
-                    stable_plate = detected
-                    stable_hits = 1
+                
+                # Unterschiedliche Logik für YOLO vs. Template Matching
+                if self._use_yolo and self._yolo_model:
+                    # YOLO11-Modus mit OCR
+                    if detected and detected != "ERKANNT":
+                        # OCR hat ein Kennzeichen gelesen
+                        self._set_state(plate=detected, status=f"✅ Kennzeichen erkannt: {detected}", active=True)
+                    elif detected == "ERKANNT":
+                        # YOLO hat erkannt, aber OCR konnte nicht lesen
+                        self._set_state(status="✅ Kennzeichen erkannt (OCR lädt...)", active=True)
+                    else:
+                        # Nichts erkannt
+                        self._set_state(status="❌ Kennzeichen nicht erkannt", active=True)
                 else:
-                    stable_hits = 0
+                    # Template Matching Modus: Mit Stabilisierung
+                    if detected and detected == stable_plate:
+                        stable_hits += 1
+                    elif detected:
+                        stable_plate = detected
+                        stable_hits = 1
+                    else:
+                        stable_hits = 0
 
-                if detected and stable_hits >= 2:
-                    self._set_state(plate=detected, status="Kennzeichen erkannt", active=True)
-                else:
-                    self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
+                    if detected and stable_hits >= 2:
+                        self._set_state(plate=detected, status="Kennzeichen erkannt", active=True)
+                    else:
+                        self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
 
                 time.sleep(0.15)
         finally:
@@ -123,7 +201,22 @@ class CameraPlateRecognizer:
         guide_y2 = int(height * 0.64)
         cv2.rectangle(preview, (guide_x1, guide_y1), (guide_x2, guide_y2), (52, 152, 219), 2)
 
-        label = f"Erkannt: {detected}" if detected else "Kennzeichen in den blauen Rahmen halten"
+        # Angepasste Label-Anzeige für YOLO vs. Template Matching
+        if self._use_yolo and self._yolo_model:
+            # YOLO11 + OCR Modus
+            if detected and detected != "ERKANNT":
+                # OCR hat erfolgreich gelesen
+                label = f"🎯 Erkannt: {detected}"
+            elif detected == "ERKANNT":
+                # Nur YOLO erkannt, OCR lädt noch
+                label = "🎯 Kennzeichen erkannt (OCR lädt...)"
+            else:
+                # Nichts erkannt
+                label = "Kennzeichen in den Bereich halten"
+        else:
+            # Template Matching Modus
+            label = f"Erkannt: {detected}" if detected else "Kennzeichen in den blauen Rahmen halten"
+        
         cv2.rectangle(preview, (0, 0), (width, 42), (44, 62, 80), -1)
         cv2.putText(preview, label, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
 
@@ -132,12 +225,194 @@ class CameraPlateRecognizer:
             self._set_jpeg(encoded.tobytes())
 
     def _detect_plate(self, frame: Any, cv2: Any) -> str:
+        """Erkennt Kennzeichen entweder mit YOLO11 oder Template Matching"""
+        
+        # Verwende YOLO11 falls verfügbar
+        if self._use_yolo and self._yolo_model:
+            return self._detect_plate_yolo(frame, cv2)
+        
+        # Fallback auf Template Matching
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (5, 5), 0)
         candidates = self._candidate_regions(gray, cv2)
 
         for candidate in candidates:
             plate = self._read_candidate(candidate, cv2)
+            if PLATE_REGEX.match(plate):
+                return plate
+
+        return ""
+    
+    def _detect_plate_yolo(self, frame: Any, cv2: Any) -> str:
+        """
+        Verwendet YOLO11 zur Kennzeichen-Erkennung und EasyOCR zum Auslesen.
+        Gibt das erkannte Kennzeichen zurück oder leeres String wenn nicht erkannt.
+        """
+        try:
+            # YOLO-Inferenz durchführen
+            results = self._yolo_model.predict(
+                source=frame,
+                conf=0.5,  # Confidence Threshold
+                verbose=False,
+                device='cpu'
+            )
+            
+            # Prüfe ob Detektionen gefunden wurden
+            if results and len(results) > 0:
+                result = results[0]
+                if result.boxes is not None and len(result.boxes) > 0:
+                    # Mindestens ein Kennzeichen erkannt
+                    # Nimm die erste Box (höchster Confidence Score)
+                    box = max(result.boxes, key=lambda current_box: float(current_box.conf[0]))
+                    
+                    # Extrahiere die Bounding Box Koordinaten
+                    x1, y1, x2, y2 = box.xyxy[0].tolist()
+                    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                    
+                    # Füge kleine Margen hinzu für bessere OCR-Ergebnisse
+                    margin = 8
+                    x1 = max(0, x1 - margin)
+                    y1 = max(0, y1 - margin)
+                    x2 = min(frame.shape[1], x2 + margin)
+                    y2 = min(frame.shape[0], y2 + margin)
+                    
+                    # Extrahiere den Kennzeichen-Bereich
+                    plate_roi = frame[y1:y2, x1:x2]
+                    
+                    # Versuche OCR zu lesen falls verfügbar
+                    if self._ocr_reader and plate_roi.size > 0:
+                        plate_text = self._read_plate_ocr(plate_roi, cv2)
+                        if plate_text:
+                            return plate_text
+                    
+                    # Fallback: Nur "ERKANNT" wenn OCR nicht funktioniert
+                    return "ERKANNT"
+            
+            # Kein Kennzeichen erkannt
+            return ""
+            
+        except Exception as e:
+            print(f"⚠️  YOLO11-Fehler: {e}")
+            return ""
+    
+    def _read_plate_ocr(self, plate_image: Any, cv2: Any) -> str:
+        """
+        Liest den Kennzeichen-Text mittels OCR.
+        Gibt das formatierte Kennzeichen zurück (z.B. A-1234) oder leer wenn nicht lesbar.
+        """
+        try:
+            if self._ocr_reader is None:
+                return ""
+
+            best_plate = ""
+            best_score = 0.0
+
+            for prepared in self._prepare_plate_for_ocr(plate_image, cv2):
+                results = self._ocr_reader.readtext(
+                    prepared,
+                    allowlist="ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789- ",
+                    detail=1,
+                    paragraph=False,
+                )
+
+                for raw_text, confidence in self._ocr_candidates(results):
+                    plate = self._normalize_plate_text(raw_text)
+                    if plate and confidence >= best_score:
+                        best_plate = plate
+                        best_score = confidence
+
+            return best_plate
+            
+            # OCR durchführen
+            
+            
+            # Kombiniere alle erkannten Texte
+            
+            # Bereinige den Text: nur Großbuchstaben und Zahlen, entferne Leerzeichen
+            
+            # Validiere deutsches Kennzeichen-Format: 1-2 Buchstaben, 4 Zahlen
+            # Beispiel: AB1234 oder A1234
+            
+            # Versuche Muster zu finden: [1-2 Buchstaben][4 Zahlen]
+            
+            # Wenn Regex nicht passt, prüfe ob wir zumindest gültige Zeichen haben
+            
+        except Exception as e:
+            print(f"⚠️  OCR-Fehler: {e}")
+            return ""
+
+    def _prepare_plate_for_ocr(self, plate_image: Any, cv2: Any) -> list[Any]:
+        """Erzeugt mehrere OCR-Varianten des Kennzeichen-Crops."""
+        if plate_image.size == 0:
+            return []
+
+        height, width = plate_image.shape[:2]
+        scale = max(2.0, 260 / max(width, 1))
+        resized = cv2.resize(
+            plate_image,
+            (int(width * scale), int(height * scale)),
+            interpolation=cv2.INTER_CUBIC,
+        )
+
+        gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
+        gray = cv2.bilateralFilter(gray, 7, 45, 45)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+        contrast = clahe.apply(gray)
+        binary = cv2.adaptiveThreshold(
+            contrast,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            31,
+            8,
+        )
+        inverted = cv2.bitwise_not(binary)
+
+        return [resized, gray, contrast, binary, inverted]
+
+    def _ocr_candidates(self, results: list[Any]) -> list[tuple[str, float]]:
+        if not results:
+            return []
+
+        candidates: list[tuple[str, float]] = []
+        parts = []
+        confidences = []
+
+        for result in results:
+            if len(result) < 3:
+                continue
+
+            box, text, confidence = result[0], str(result[1]), float(result[2])
+            x_position = min(point[0] for point in box) if box else 0
+            parts.append((x_position, text))
+            confidences.append(confidence)
+            candidates.append((text, confidence))
+
+        if parts:
+            combined = "".join(text for _, text in sorted(parts, key=lambda item: item[0]))
+            average_confidence = sum(confidences) / max(len(confidences), 1)
+            candidates.append((combined, average_confidence))
+
+        return candidates
+
+    def _normalize_plate_text(self, text: str) -> str:
+        cleaned = re.sub(r"[^A-Z0-9]", "", text.upper())
+        if len(cleaned) < 5:
+            return ""
+
+        letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "5": "S", "8": "B"})
+        number_map = str.maketrans({"O": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7"})
+
+        possible_parts: list[tuple[str, str]] = []
+        if len(cleaned) >= 5:
+            compact = cleaned[:5]
+            possible_parts.append((compact[:1], compact[1:]))
+            possible_parts.append((cleaned[-5:-4], cleaned[-4:]))
+
+        for letters, numbers in possible_parts:
+            normalized_letters = letters.translate(letter_map)
+            normalized_numbers = numbers.translate(number_map)
+            plate = f"{normalized_letters}-{normalized_numbers}"
             if PLATE_REGEX.match(plate):
                 return plate
 
@@ -221,9 +496,9 @@ class CameraPlateRecognizer:
             chars.append(self._classify_char(char_img, cv2))
 
         plate = "".join(chars)
-        if len(plate) >= 6 and "-" not in plate:
-            plate = f"{plate[:2]}-{plate[2:]}"
-        return plate[:7]
+        if len(plate) >= 5 and "-" not in plate:
+            plate = f"{plate[:1]}-{plate[1:]}"
+        return plate[:6]
 
     def _merge_boxes(self, boxes: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:
         merged: list[tuple[int, int, int, int]] = []

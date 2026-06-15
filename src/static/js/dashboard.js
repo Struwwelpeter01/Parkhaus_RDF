@@ -118,7 +118,7 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     function validateKennzeichen(kennzeichen) {
-        return /^[A-Z]{1,2}-[0-9]{4}$/.test(kennzeichen.toUpperCase());
+        return /^[A-Z]-[0-9]{4}$/.test(kennzeichen.toUpperCase());
     }
 
     async function loadKameraKennzeichen() {
@@ -128,9 +128,32 @@ document.addEventListener("DOMContentLoaded", function () {
             const plate = (result.plate || "").trim().toUpperCase();
 
             kameraStatus.textContent = result.status || "Kamera aktiv";
-            kameraKennzeichen.textContent = `Erkannt: ${plate || "-"}`;
+            
+            // Bessere Formatierung für YOLO11 + OCR Erkennungen
+            if (plate && /^[A-Z]-\d{4}$/.test(plate)) {
+                // Vollständiges Kennzeichen erkannt (OCR erfolgreich)
+                kameraKennzeichen.textContent = `✅ Erkannt: ${plate}`;
+                kameraKennzeichen.style.color = "#27ae60";
+            } else if (plate === "ERKANNT") {
+                // Nur YOLO erkannt, OCR lädt noch
+                kameraKennzeichen.textContent = "🔄 Kennzeichen erkannt (OCR lädt...)";
+                kameraKennzeichen.style.color = "#f39c12";
+            } else if (result.status && result.status.includes("nicht erkannt")) {
+                kameraKennzeichen.textContent = "❌ Kennzeichen nicht erkannt";
+                kameraKennzeichen.style.color = "#e74c3c";
+            } else {
+                // Fallback für Template Matching
+                kameraKennzeichen.textContent = `Erkannt: ${plate || "-"}`;
+                kameraKennzeichen.style.color = "#2c3e50";
+            }
 
-            if (!plate || plate === ignoredCameraPlate || plate === lastCameraPlate) {
+            // Nur weiterführen wenn echtes Kennzeichen (nicht ERKANNT oder leer)
+            if (!plate || plate === ignoredCameraPlate || plate === lastCameraPlate || plate === "ERKANNT") {
+                return;
+            }
+
+            // Validiere Kennzeichen-Format
+            if (!/^[A-Z]-\d{4}$/.test(plate)) {
                 return;
             }
 
@@ -258,7 +281,7 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         if (!validateKennzeichen(kennzeichen)) {
-            alert('Ungueltiges Format! Verwenden Sie z.B. "AB-1234"');
+            alert('Ungueltiges Format! Verwenden Sie z.B. "A-1234"');
             return;
         }
 

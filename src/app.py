@@ -12,6 +12,10 @@ app = Flask(__name__,
             template_folder=os.path.join(app_dir, 'templates'),
             static_folder=os.path.join(app_dir, 'static'))
 
+# Kamera-Erkennung starten
+print("🚀 Starte Kamera-Erkennung mit YOLO11...")
+camera_recognizer.start()
+
 # Datenbank-Verbindung
 def get_db():
     db_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'parkhaus.db')
