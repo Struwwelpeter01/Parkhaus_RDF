@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from collections import Counter, deque
 from dataclasses import dataclass
 from typing import Any
 from pathlib import Path
@@ -37,6 +38,19 @@ class CameraPlateRecognizer:
         self._ocr_reader = None
         self._use_yolo = False
         self._last_ocr_raw = ""
+        self._ocr_thread: threading.Thread | None = None
+        self._ocr_running = False
+        self._ocr_lock = threading.Lock()
+        self._stable_box: tuple[float, float, float, float] | None = None
+        self._stable_since = 0.0
+        self._last_ocr_attempt_at = 0.0
+        self._stable_seconds_required = 1.2
+        self._ocr_retry_seconds = 0.8
+        self._ocr_votes: deque[str] = deque(maxlen=5)
+        self._ocr_min_votes = 2
+        self._last_detected = ""
+        self._last_detection_at = 0.0
+        self._detection_interval = 0.1
         
         # Versuche YOLO11-Modell zu laden
         self._load_yolo_model()
@@ -169,12 +183,24 @@ class CameraPlateRecognizer:
                     time.sleep(0.5)
                     continue
 
-                detected = self._detect_plate(frame, cv2)
+                now = time.time()
+                detected = self._last_detected
+                if now - self._last_detection_at >= self._detection_interval:
+                    detected = self._detect_plate(frame, cv2)
+                    self._last_detected = detected
+                    self._last_detection_at = now
                 self._update_preview(frame, detected, cv2)
                 
                 # Unterschiedliche Logik für YOLO vs. Template Matching
                 if self._use_yolo and self._yolo_model:
-                    if detected and detected != "ERKANNT":
+                    if detected == "WARTET":
+                        self._set_state(
+                            plate="",
+                            ocr_raw="",
+                            status="Kennzeichen erkannt, warte auf Stillstand",
+                            active=True,
+                        )
+                    elif detected and detected != "ERKANNT":
                         self._set_state(
                             plate=detected,
                             ocr_raw=self._last_ocr_raw,
@@ -184,16 +210,18 @@ class CameraPlateRecognizer:
                     elif detected == "ERKANNT":
                         if self._ocr_reader is None:
                             status = "Kennzeichen erkannt, aber EasyOCR ist nicht geladen"
+                        elif self._ocr_running:
+                            status = "Kennzeichen erkannt, OCR liest..."
                         elif self._last_ocr_raw:
                             status = f"Kennzeichen erkannt, OCR-Rohtext: {self._last_ocr_raw}"
                         else:
                             status = "Kennzeichen erkannt, OCR konnte den Text nicht lesen"
 
-                        self._set_state(plate="", ocr_raw=self._last_ocr_raw, status=status, active=True)
+                        self._set_state(ocr_raw=self._last_ocr_raw, status=status, active=True)
                     else:
                         self._set_state(plate="", ocr_raw="", status="Kennzeichen nicht erkannt", active=True)
 
-                    time.sleep(0.15)
+                    time.sleep(0.02)
                     continue
 
                     # YOLO11-Modus mit OCR
@@ -221,7 +249,7 @@ class CameraPlateRecognizer:
                     else:
                         self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
 
-                time.sleep(0.15)
+                time.sleep(0.02)
         finally:
             camera.close()
             self._set_state(status="Kamera beendet", active=False)
@@ -229,16 +257,13 @@ class CameraPlateRecognizer:
     def _update_preview(self, frame: Any, detected: str, cv2: Any) -> None:
         preview = frame.copy()
         height, width = preview.shape[:2]
-        guide_x1 = int(width * 0.18)
-        guide_x2 = int(width * 0.82)
-        guide_y1 = int(height * 0.36)
-        guide_y2 = int(height * 0.64)
-        cv2.rectangle(preview, (guide_x1, guide_y1), (guide_x2, guide_y2), (52, 152, 219), 2)
 
         # Angepasste Label-Anzeige für YOLO vs. Template Matching
         if self._use_yolo and self._yolo_model:
             # YOLO11 + OCR Modus
-            if detected and detected != "ERKANNT":
+            if detected == "WARTET":
+                label = "Kennzeichen erkannt - bitte kurz stillhalten"
+            elif detected and detected != "ERKANNT":
                 # OCR hat erfolgreich gelesen
                 label = f"🎯 Erkannt: {detected}"
             elif detected == "ERKANNT":
@@ -254,7 +279,7 @@ class CameraPlateRecognizer:
         cv2.rectangle(preview, (0, 0), (width, 42), (44, 62, 80), -1)
         cv2.putText(preview, label, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
 
-        ok, encoded = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        ok, encoded = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 70])
         if ok:
             self._set_jpeg(encoded.tobytes())
 
@@ -303,6 +328,7 @@ class CameraPlateRecognizer:
                     # Extrahiere die Bounding Box Koordinaten
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                    stable_seconds = self._update_box_stability((x1, y1, x2, y2), frame.shape)
                     
                     # Füge kleine Margen hinzu für bessere OCR-Ergebnisse
                     margin = 8
@@ -313,23 +339,111 @@ class CameraPlateRecognizer:
                     
                     # Extrahiere den Kennzeichen-Bereich
                     plate_roi = frame[y1:y2, x1:x2]
+
+                    if stable_seconds < self._stable_seconds_required:
+                        return "WARTET"
+
+                    now = time.time()
+                    if now - self._last_ocr_attempt_at < self._ocr_retry_seconds:
+                        return "ERKANNT"
+
+                    self._last_ocr_attempt_at = now
                     
                     # Versuche OCR zu lesen falls verfügbar
                     if self._ocr_reader and plate_roi.size > 0:
-                        plate_text = self._read_plate_ocr(plate_roi, cv2)
-                        if plate_text:
-                            return plate_text
+                        self._start_ocr_worker(plate_roi.copy(), cv2)
                     
                     # Fallback: Nur "ERKANNT" wenn OCR nicht funktioniert
                     return "ERKANNT"
             
             # Kein Kennzeichen erkannt
+            self._reset_box_stability()
             return ""
             
         except Exception as e:
             print(f"⚠️  YOLO11-Fehler: {e}")
             return ""
     
+    def _update_box_stability(self, box: tuple[int, int, int, int], frame_shape: Any) -> float:
+        height, width = frame_shape[:2]
+        x1, y1, x2, y2 = box
+        normalized = (
+            x1 / max(width, 1),
+            y1 / max(height, 1),
+            x2 / max(width, 1),
+            y2 / max(height, 1),
+        )
+
+        now = time.time()
+        if self._stable_box is None:
+            self._stable_box = normalized
+            self._stable_since = now
+            return 0.0
+
+        max_delta = max(abs(current - previous) for current, previous in zip(normalized, self._stable_box))
+        if max_delta > 0.035:
+            self._stable_box = normalized
+            self._stable_since = now
+            self._last_ocr_attempt_at = 0.0
+            self._ocr_votes.clear()
+            return 0.0
+
+        self._stable_box = normalized
+        return now - self._stable_since
+
+    def _reset_box_stability(self) -> None:
+        self._stable_box = None
+        self._stable_since = 0.0
+        self._last_ocr_attempt_at = 0.0
+        self._ocr_votes.clear()
+
+    def _remember_ocr_vote(self, plate: str) -> str:
+        self._ocr_votes.append(plate)
+        votes = Counter(self._ocr_votes)
+        winner, count = votes.most_common(1)[0]
+        if count >= self._ocr_min_votes:
+            return winner
+
+        return ""
+
+    def _start_ocr_worker(self, plate_roi: Any, cv2: Any) -> None:
+        with self._ocr_lock:
+            if self._ocr_running:
+                return
+
+            self._ocr_running = True
+
+        self._ocr_thread = threading.Thread(
+            target=self._run_ocr_worker,
+            args=(plate_roi, cv2),
+            daemon=True,
+        )
+        self._ocr_thread.start()
+
+    def _run_ocr_worker(self, plate_roi: Any, cv2: Any) -> None:
+        try:
+            plate_text = self._read_plate_ocr(plate_roi, cv2)
+            if not plate_text:
+                if self._last_ocr_raw:
+                    self._set_state(
+                        ocr_raw=self._last_ocr_raw,
+                        status=f"Kennzeichen erkannt, OCR-Rohtext: {self._last_ocr_raw}",
+                        active=True,
+                    )
+                return
+
+            voted_plate = self._remember_ocr_vote(plate_text)
+            if voted_plate:
+                self._set_state(
+                    plate=voted_plate,
+                    ocr_raw=self._last_ocr_raw,
+                    status=f"Kennzeichen erkannt: {voted_plate}",
+                    active=True,
+                )
+        finally:
+            with self._ocr_lock:
+                self._ocr_running = False
+
     def _read_plate_ocr(self, plate_image: Any, cv2: Any) -> str:
         """
         Liest den Kennzeichen-Text mittels OCR.
@@ -339,8 +453,7 @@ class CameraPlateRecognizer:
             if self._ocr_reader is None:
                 return ""
 
-            best_plate = ""
-            best_score = 0.0
+            plate_scores: dict[str, float] = {}
             raw_texts: list[str] = []
 
             for prepared in self._prepare_plate_for_ocr(plate_image, cv2):
@@ -357,15 +470,17 @@ class CameraPlateRecognizer:
                 for raw_text, confidence in self._ocr_candidates(results):
                     if raw_text.strip():
                         raw_texts.append(raw_text.strip())
-                    plate = self._normalize_plate_text(raw_text)
-                    if plate and confidence >= best_score:
-                        best_plate = plate
-                        best_score = confidence
+                    for plate in self._plate_candidates_from_text(raw_text):
+                        exact_bonus = 0.25 if len(re.sub(r"[^A-Z0-9]", "", raw_text.upper())) == 5 else 0.0
+                        plate_scores[plate] = plate_scores.get(plate, 0.0) + confidence + exact_bonus
 
             unique_raw_texts = list(dict.fromkeys(raw_texts))
             self._last_ocr_raw = " | ".join(unique_raw_texts[:3])
 
-            return best_plate
+            if plate_scores:
+                return max(plate_scores.items(), key=lambda item: item[1])[0]
+
+            return ""
             
             # OCR durchführen
             
@@ -390,8 +505,18 @@ class CameraPlateRecognizer:
         if plate_image.size == 0:
             return []
 
+        import numpy as np
+
+        plate_image = cv2.copyMakeBorder(
+            plate_image,
+            10,
+            10,
+            18,
+            18,
+            cv2.BORDER_REPLICATE,
+        )
         height, width = plate_image.shape[:2]
-        scale = max(2.0, 260 / max(width, 1))
+        scale = max(2.5, 420 / max(width, 1))
         resized = cv2.resize(
             plate_image,
             (int(width * scale), int(height * scale)),
@@ -402,17 +527,24 @@ class CameraPlateRecognizer:
         gray = cv2.bilateralFilter(gray, 7, 45, 45)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         contrast = clahe.apply(gray)
+        sharpen_kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+        sharpened = cv2.filter2D(contrast, -1, sharpen_kernel)
+        _, otsu = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         binary = cv2.adaptiveThreshold(
-            contrast,
+            sharpened,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
             31,
             8,
         )
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+        binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        otsu = cv2.morphologyEx(otsu, cv2.MORPH_CLOSE, kernel)
         inverted = cv2.bitwise_not(binary)
+        inverted_otsu = cv2.bitwise_not(otsu)
 
-        return [resized, gray, contrast, binary, inverted]
+        return [resized, gray, contrast, sharpened, otsu, binary, inverted, inverted_otsu]
 
     def _ocr_candidates(self, results: list[Any]) -> list[tuple[str, float]]:
         if not results:
@@ -440,27 +572,31 @@ class CameraPlateRecognizer:
         return candidates
 
     def _normalize_plate_text(self, text: str) -> str:
+        candidates = self._plate_candidates_from_text(text)
+        return candidates[0] if candidates else ""
+
+    def _plate_candidates_from_text(self, text: str) -> list[str]:
         cleaned = re.sub(r"[^A-Z0-9]", "", text.upper())
         if len(cleaned) < 5:
-            return ""
+            return []
 
-        letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "5": "S", "8": "B"})
-        number_map = str.maketrans({"O": "0", "I": "1", "L": "1", "Z": "2", "S": "5", "B": "8", "G": "6", "T": "7"})
+        letter_map = str.maketrans({"0": "O", "1": "I", "2": "Z", "4": "A", "5": "S", "6": "G", "7": "T", "8": "B"})
+        number_map = str.maketrans({"A": "4", "B": "8", "D": "0", "G": "6", "I": "1", "L": "1", "O": "0", "Q": "0", "S": "5", "T": "7", "Z": "2"})
 
         possible_parts: list[tuple[str, str]] = []
-        if len(cleaned) >= 5:
-            compact = cleaned[:5]
+        for index in range(0, len(cleaned) - 4):
+            compact = cleaned[index:index + 5]
             possible_parts.append((compact[:1], compact[1:]))
-            possible_parts.append((cleaned[-5:-4], cleaned[-4:]))
 
+        candidates = []
         for letters, numbers in possible_parts:
             normalized_letters = letters.translate(letter_map)
             normalized_numbers = numbers.translate(number_map)
             plate = f"{normalized_letters}-{normalized_numbers}"
             if PLATE_REGEX.match(plate):
-                return plate
+                candidates.append(plate)
 
-        return ""
+        return list(dict.fromkeys(candidates))
 
     def _candidate_regions(self, gray: Any, cv2: Any) -> list[Any]:
         height, width = gray.shape[:2]

@@ -139,6 +139,12 @@ document.addEventListener("DOMContentLoaded", function () {
                 // Nur YOLO erkannt, OCR lädt noch
                 kameraKennzeichen.textContent = "🔄 Kennzeichen erkannt (OCR lädt...)";
                 kameraKennzeichen.style.color = "#f39c12";
+            } else if (result.status && result.status.includes("OCR liest")) {
+                kameraKennzeichen.textContent = "Kennzeichen erkannt - OCR liest...";
+                kameraKennzeichen.style.color = "#f39c12";
+            } else if (result.status && result.status.includes("warte auf Stillstand")) {
+                kameraKennzeichen.textContent = "Kennzeichen erkannt - bitte kurz stillhalten";
+                kameraKennzeichen.style.color = "#f39c12";
             } else if (ocrRaw) {
                 kameraKennzeichen.textContent = `OCR-Rohtext: ${ocrRaw}`;
                 kameraKennzeichen.style.color = "#f39c12";
@@ -396,5 +402,5 @@ document.addEventListener("DOMContentLoaded", function () {
     loadData();
     loadKameraKennzeichen();
     setInterval(loadData, 5000);
-    setInterval(loadKameraKennzeichen, 600);
+    setInterval(loadKameraKennzeichen, 250);
 });

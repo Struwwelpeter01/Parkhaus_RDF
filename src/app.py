@@ -68,7 +68,7 @@ def get_kamera_stream():
                     b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n'
                 )
-            time.sleep(0.08)
+            time.sleep(0.02)
 
     return Response(generate(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
