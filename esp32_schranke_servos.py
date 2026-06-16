@@ -32,16 +32,20 @@ SERVO_FREQUENZ = 50
 SERVO_MIN_US = 500
 SERVO_MAX_US = 2500
 
-# Falls die Schranke falsch herum faehrt, diese beiden Werte tauschen.
-WINKEL_ZU = 0
-WINKEL_OFFEN = 90
+# Servo-Kalibrierung:
+# Diese Werte pro Schranke so anpassen, bis die Mechanik sauber steht.
+# In kleinen Schritten testen, z.B. 2 bis 5 Grad.
+EINFAHRT_WINKEL_ZU = 1
+EINFAHRT_WINKEL_OFFEN = 95
 
-OFFEN_ZEIT_MS = 10_000
+AUSFAHRT_WINKEL_ZU = 1
+AUSFAHRT_WINKEL_OFFEN = 75
+
 ENTPRELL_ZEIT_MS = 300
 
 # True: Eingang ist aktiv, wenn 3.3 V/HIGH anliegt.
 # Finaler Aufbau:
-# ESP-GPIO hat einen 10-kOhm-Widerstand nach GND.
+# ESP-GPIO nutzt intern Pull-down, also ist der Ruhezustand LOW/0.
 # Raspberry Pi gibt beim erkannten Auto kurz 3.3 V/HIGH auf den ESP-GPIO.
 SIGNAL_AKTIV_HIGH = True
 
@@ -51,10 +55,10 @@ DEBUG_EINGAENGE = False
 
 
 class Servo:
-    def __init__(self, pin):
+    def __init__(self, pin, start_winkel):
         self.pwm = PWM(Pin(pin), freq=SERVO_FREQUENZ)
-        self.winkel = WINKEL_ZU
-        self.set_winkel(WINKEL_ZU)
+        self.winkel = start_winkel
+        self.set_winkel(start_winkel)
 
     def set_winkel(self, winkel):
         winkel = max(0, min(180, winkel))
@@ -71,15 +75,25 @@ class Servo:
 
 
 class Schranke:
-    def __init__(self, name, signal_pin, servo_pin, led_rot_pin, led_gruen_pin):
+    def __init__(
+        self,
+        name,
+        signal_pin,
+        servo_pin,
+        led_rot_pin,
+        led_gruen_pin,
+        winkel_zu,
+        winkel_offen,
+    ):
         self.name = name
-        self.signal = Pin(signal_pin, Pin.IN)
-        self.servo = Servo(servo_pin)
+        self.winkel_zu = winkel_zu
+        self.winkel_offen = winkel_offen
+        self.signal = Pin(signal_pin, Pin.IN, Pin.PULL_DOWN)
+        self.servo = Servo(servo_pin, winkel_zu)
         self.led_rot = Pin(led_rot_pin, Pin.OUT)
         self.led_gruen = Pin(led_gruen_pin, Pin.OUT)
 
         self.ist_offen = False
-        self.offen_bis = 0
         self.letzter_impuls_ms = 0
         self.letztes_signal_aktiv = self.signal_ist_aktiv()
 
@@ -95,14 +109,13 @@ class Schranke:
 
     def oeffnen(self):
         print(self.name, "oeffnet")
-        self.servo.set_winkel(WINKEL_OFFEN)
+        self.servo.set_winkel(self.winkel_offen)
         self.ampel_gruen()
         self.ist_offen = True
-        self.offen_bis = ticks_ms() + OFFEN_ZEIT_MS
 
     def schliessen(self):
         print(self.name, "geschlossen")
-        self.servo.set_winkel(WINKEL_ZU)
+        self.servo.set_winkel(self.winkel_zu)
         self.ampel_rot()
         self.ist_offen = False
 
@@ -131,9 +144,6 @@ class Schranke:
         if self.signal_erkannt():
             self.oeffnen()
 
-        if self.ist_offen and ticks_diff(ticks_ms(), self.offen_bis) >= 0:
-            self.schliessen()
-
 
 einfahrt = Schranke(
     "Einfahrt",
@@ -141,6 +151,8 @@ einfahrt = Schranke(
     SERVO_EINFAHRT_PIN,
     LED_EINFAHRT_ROT_PIN,
     LED_EINFAHRT_GRUEN_PIN,
+    EINFAHRT_WINKEL_ZU,
+    EINFAHRT_WINKEL_OFFEN,
 )
 
 ausfahrt = Schranke(
@@ -149,6 +161,8 @@ ausfahrt = Schranke(
     SERVO_AUSFAHRT_PIN,
     LED_AUSFAHRT_ROT_PIN,
     LED_AUSFAHRT_GRUEN_PIN,
+    AUSFAHRT_WINKEL_ZU,
+    AUSFAHRT_WINKEL_OFFEN,
 )
 
 
