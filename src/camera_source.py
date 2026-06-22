@@ -37,6 +37,7 @@ class CameraSource:
                 camera = cv2.VideoCapture(self.source)
                 camera.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
                 camera.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+                camera.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 if not camera.isOpened():
                     raise RuntimeError("OpenCV konnte keine Kamera oeffnen.")
                 self._camera = camera
@@ -60,18 +61,25 @@ class CameraSource:
         self.kind = ""
 
     def _create_pi_config(self, camera: Any) -> Any:
-        try:
-            config = camera.create_preview_configuration(
-                main={"size": (self.width, self.height), "format": "BGR888"}
-            )
-            self._pi_format = "BGR888"
-            return config
-        except Exception:
-            config = camera.create_preview_configuration(
-                main={"size": (self.width, self.height), "format": "RGB888"}
-            )
-            self._pi_format = "RGB888"
-            return config
+        for image_format in ("BGR888", "RGB888"):
+            for extra_options in (
+                {"buffer_count": 2, "controls": {"FrameDurationLimits": (33333, 33333)}},
+                {"buffer_count": 2},
+                {},
+            ):
+                try:
+                    config = camera.create_preview_configuration(
+                        main={"size": (self.width, self.height), "format": image_format},
+                        **extra_options,
+                    )
+                    self._pi_format = image_format
+                    return config
+                except Exception:
+                    continue
+
+        config = camera.create_preview_configuration(main={"size": (self.width, self.height)})
+        self._pi_format = ""
+        return config
 
     def _apply_pi_controls(self, camera: Any) -> None:
         controls_to_set: dict[str, Any] = {
