@@ -17,7 +17,7 @@ sys.path.insert(0, src_path)
 
 # Flask-App importieren
 from app import app
-from app import camera_recognizer
+from app import camera_recognizer, exit_camera_recognizer
 
 
 host = os.getenv("PARKHAUS_HOST", "0.0.0.0")
@@ -53,6 +53,8 @@ if open_browser_enabled:
 
 try:
     camera_recognizer.start()
+    if exit_camera_recognizer is not camera_recognizer:
+        exit_camera_recognizer.start()
     app.run(host=host, port=port, debug=True, use_reloader=False)
 except KeyboardInterrupt:
     print("\n\nServer wurde beendet.")

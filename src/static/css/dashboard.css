@@ -1,136 +1,206 @@
 * {
+    box-sizing: border-box;
     margin: 0;
     padding: 0;
-    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    min-height: 100%;
 }
 
 body {
-    min-height: 100vh;
+    overflow: hidden;
     font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-    color: #2c3e50;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #22313f;
+    background: #eef3f7;
 }
 
-.container {
-    max-width: 1360px;
-    margin: 0 auto;
-    padding: 20px;
+.dashboard {
+    display: grid;
+    grid-template-columns: 300px minmax(420px, 1fr) minmax(460px, 1.05fr);
+    grid-template-rows: 76px 1fr 250px;
+    gap: 14px;
+    width: 100vw;
+    height: 100vh;
+    padding: 14px;
 }
 
-header {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 15px;
-    padding: 26px 20px;
-    margin-bottom: 30px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+.topbar,
+.entry-panel,
+.camera-card,
+.active-panel,
+.permanent-panel {
+    border: 1px solid #d7e0e8;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 8px 22px rgba(26, 43, 58, 0.08);
 }
 
-header h1 {
-    text-align: center;
-    font-size: 2.4rem;
+.topbar {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 24px;
+}
+
+.topbar h1 {
+    font-size: 2rem;
+    font-weight: 800;
     letter-spacing: 0;
 }
 
-.main-content {
-    display: grid;
-    grid-template-columns: minmax(430px, 1fr) minmax(520px, 1fr);
-    gap: 30px;
-    align-items: start;
+.clock {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #0f5e7a;
 }
 
-.panel {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 15px;
-    padding: 25px;
-    margin-bottom: 30px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+.entry-panel {
+    grid-column: 1;
+    grid-row: 2 / 4;
+    padding: 18px;
 }
 
-.panel h2 {
-    padding-bottom: 10px;
-    margin-bottom: 20px;
-    border-bottom: 2px solid #3498db;
-    font-size: 1.45rem;
+.entry-panel h2,
+.camera-card h2,
+.active-panel h2,
+.permanent-panel h2 {
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #2791b5;
+    font-size: 1.2rem;
+    letter-spacing: 0;
 }
 
-.kennzeichen-input-section {
-    text-align: center;
-}
-
-.form-group {
-    margin-bottom: 20px;
-}
-
-.form-group label {
+.entry-panel label {
     display: block;
-    margin-bottom: 6px;
-    font-weight: 700;
+    margin: 12px 0 8px;
+    font-weight: 800;
 }
 
-.form-group input {
+.entry-panel input {
     width: 100%;
-    padding: 10px;
-    border: 2px solid #bdc3c7;
-    border-radius: 5px;
-    font-size: 1.45rem;
-    font-weight: 700;
-    letter-spacing: 2px;
+    height: 62px;
+    padding: 8px 10px;
+    border: 2px solid #9eb3c5;
+    border-radius: 6px;
+    font-size: 1.9rem;
+    font-weight: 900;
+    letter-spacing: 0;
     text-align: center;
+    text-transform: uppercase;
 }
 
-.form-group input:focus {
+.entry-panel input:focus {
     outline: none;
-    border-color: #3498db;
+    border-color: #2791b5;
+}
+
+.button-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+    margin-top: 16px;
 }
 
 .btn {
     display: inline-flex;
     justify-content: center;
     align-items: center;
-    gap: 8px;
-    min-height: 45px;
-    padding: 12px 22px;
+    min-height: 44px;
+    padding: 10px 14px;
     border: 0;
     border-radius: 8px;
-    font-size: 1rem;
-    font-weight: 700;
+    color: #ffffff;
+    font-size: 0.95rem;
+    font-weight: 800;
+    text-decoration: none;
     cursor: pointer;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.18);
-}
-
-.btn:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
+.btn-warning {
+    background: #b56b12;
 }
 
 .btn-success {
-    color: white;
-    background: linear-gradient(45deg, #27ae60, #2ecc71);
+    background: #1f8d54;
 }
 
-.btn-primary {
-    color: white;
-    background: linear-gradient(45deg, #3498db, #2980b9);
+.btn-danger {
+    background: #b9362f;
 }
 
 .btn-secondary {
-    color: white;
-    background: linear-gradient(45deg, #95a5a6, #7f8c8d);
+    background: #596a78;
+}
+
+.btn-small {
+    min-height: 34px;
+    padding: 7px 12px;
+    font-size: 0.85rem;
+}
+
+.gate-status {
+    display: grid;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.gate-status div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: #f7fafc;
+    font-size: 0.88rem;
+}
+
+.gate-status span {
+    min-width: 94px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    background: #f4d6d4;
+    color: #8c2721;
+    font-weight: 900;
+    text-align: center;
+}
+
+.gate-status span.open {
+    background: #dcefe7;
+    color: #16613c;
+}
+
+.camera-panel {
+    grid-column: 2;
+    grid-row: 2 / 4;
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    gap: 14px;
+    min-height: 0;
+}
+
+.camera-card {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    min-height: 0;
+    padding: 14px;
 }
 
 .camera-window {
     position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
+    min-height: 0;
     overflow: hidden;
-    border: 2px solid rgba(52, 152, 219, 0.35);
+    border: 2px solid rgba(39, 145, 181, 0.32);
     border-radius: 8px;
-    background: #1f2d3a;
+    background: #111b24;
 }
 
 .camera-window img {
@@ -141,270 +211,261 @@ header h1 {
 }
 
 .camera-meta {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(150px, auto);
     gap: 12px;
-    margin-top: 12px;
-    color: #5d6d7e;
-    font-size: 0.95rem;
-    font-weight: 700;
+    margin-top: 10px;
+    color: #526575;
+    font-size: 0.88rem;
+    font-weight: 800;
 }
 
 .camera-meta span {
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
-.status-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
+.camera-meta .ok {
+    color: #1f8d54;
 }
 
-.status-card {
-    display: grid;
-    grid-template-rows: auto 1fr auto;
-    justify-items: center;
-    min-height: 225px;
-    padding: 18px;
-    border-radius: 12px;
-    background: #f8f9fa;
-    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.06);
+.camera-meta .warn {
+    color: #b56b12;
 }
 
-.status-head {
-    margin-bottom: 14px;
-    font-weight: 800;
+.camera-meta .error {
+    color: #b9362f;
 }
 
-.ampel {
+.active-panel {
+    grid-column: 3;
+    grid-row: 2;
+    min-height: 0;
+    padding: 14px;
+}
+
+.permanent-panel {
+    grid-column: 3;
+    grid-row: 3;
+    min-height: 0;
+    padding: 14px;
+}
+
+.section-head {
     display: flex;
-    flex-direction: column;
-    gap: 8px;
-    align-self: start;
-    padding: 12px;
-    border: 1px solid rgba(44, 62, 80, 0.08);
-    border-radius: 14px;
-    background: #f6f8fb;
-}
-
-.ampel.compact {
-    padding: 10px;
-}
-
-.licht {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    opacity: 0.3;
-}
-
-.licht.gruen {
-    background: #27ae60;
-}
-
-.licht.rot {
-    background: #e74c3c;
-}
-
-.licht.aktiv {
-    opacity: 1;
-    box-shadow: 0 0 18px currentColor;
-}
-
-.status-box {
-    width: 100%;
-    min-height: 48px;
-    margin-top: 14px;
-    padding: 10px 12px;
-    border: 1px solid rgba(52, 152, 219, 0.25);
-    border-radius: 10px;
-    background: white;
-    font-weight: 800;
-    display: flex;
-    justify-content: center;
+    justify-content: space-between;
     align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.section-head h2 {
+    flex: 1;
+    margin-bottom: 0;
+}
+
+#parkhaus-counter {
+    min-width: 86px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #dcefe7;
+    color: #16613c;
+    font-weight: 900;
+    text-align: center;
+}
+
+#parkhaus-counter.full {
+    background: #f4d6d4;
+    color: #9a2721;
+}
+
+.price-badge {
+    min-width: 86px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: #e7f0fb;
+    color: #17527a;
+    font-weight: 900;
     text-align: center;
 }
 
 #aktive-parkvorgaenge {
-    min-height: 360px;
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+}
+
+#dauerparker-list {
+    display: grid;
+    gap: 8px;
+}
+
+.dauerparker-row {
+    display: grid;
+    grid-template-columns: minmax(88px, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 42px;
+    padding: 9px 12px;
+    border-left: 5px solid #1f8d54;
+    border-radius: 8px;
+    background: #f3fbf7;
+    color: #22313f;
+    font-size: 0.92rem;
+}
+
+.dauerparker-row span {
+    color: #16613c;
+    font-weight: 900;
 }
 
 .parkvorgang-card {
     display: grid;
-    grid-template-columns: 110px 1fr auto;
-    gap: 14px;
+    grid-template-columns: 92px minmax(0, 1fr) 138px;
+    gap: 10px;
     align-items: center;
-    min-height: 62px;
-    margin-bottom: 10px;
-    padding: 12px 14px;
-    border-left: 4px solid #3498db;
+    min-height: 58px;
+    padding: 10px 12px;
+    border-left: 5px solid #2791b5;
     border-radius: 8px;
-    background: #f8f9fa;
+    background: #f7fafc;
 }
 
-.parkvorgang-card h4 {
+.parkvorgang-card.blocked {
+    border-left-color: #c0392b;
+    background: #fdeceb;
+}
+
+.parkvorgang-card h3 {
     font-size: 1.05rem;
+    letter-spacing: 0;
 }
 
 .parkvorgang-info {
     display: grid;
-    grid-template-columns: repeat(4, minmax(70px, 1fr));
-    gap: 10px;
-    color: #5d6d7e;
-    font-size: 0.9rem;
+    grid-template-columns: repeat(4, minmax(66px, 1fr));
+    gap: 8px;
+    color: #526575;
+    font-size: 0.78rem;
 }
 
 .parkvorgang-info strong {
     display: block;
-    color: #2c3e50;
+    color: #22313f;
+    font-size: 0.72rem;
 }
 
-.btn-ausfahrt {
-    min-width: 95px;
-    padding: 9px 14px;
+.paid-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    color: #22313f;
+    font-size: 0.82rem;
+    font-weight: 800;
+}
+
+.paid-check input {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
 }
 
 .pagination {
     display: flex;
     justify-content: center;
-    gap: 10px;
-    min-height: 34px;
-    margin-top: 14px;
+    gap: 8px;
+    min-height: 30px;
+    margin-top: 10px;
 }
 
 .page-btn {
-    width: 32px;
-    height: 32px;
-    border: 2px solid #3498db;
+    width: 30px;
+    height: 30px;
+    border: 2px solid #2791b5;
     border-radius: 6px;
     background: transparent;
-    color: #2c3e50;
-    font-weight: 800;
+    color: #22313f;
+    font-weight: 900;
     cursor: pointer;
 }
 
 .page-btn.active {
     color: white;
-    background: #3498db;
-}
-
-.parking-lot {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(86px, 1fr));
-    gap: 12px;
-}
-
-.parking-space {
-    position: relative;
-    min-height: 88px;
-    padding: 10px;
-    border: 2px solid #8aa4bd;
-    border-radius: 6px;
-    background:
-        linear-gradient(90deg, transparent calc(50% - 1px), rgba(44, 62, 80, 0.2) calc(50% - 1px), rgba(44, 62, 80, 0.2) calc(50% + 1px), transparent calc(50% + 1px)),
-        #f8f9fa;
-}
-
-.space-number {
-    font-weight: 800;
-    color: #2c3e50;
-}
-
-.space-led {
-    position: absolute;
-    right: 10px;
-    bottom: 10px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #27ae60;
-    box-shadow: 0 0 12px #27ae60;
-}
-
-.parking-space.occupied .space-led {
-    background: #e74c3c;
-    box-shadow: 0 0 12px #e74c3c;
-}
-
-.parking-space.occupied::after {
-    content: "";
-    position: absolute;
-    left: 28%;
-    right: 28%;
-    top: 26px;
-    bottom: 18px;
-    border-radius: 12px 12px 8px 8px;
-    background: #566573;
+    background: #2791b5;
 }
 
 .no-data {
     display: flex;
     justify-content: center;
     align-items: center;
-    min-height: 160px;
-    color: #7f8c8d;
+    min-height: 120px;
+    color: #7b8a97;
     font-style: italic;
 }
 
-.modal {
-    display: none;
+.toast {
     position: fixed;
-    inset: 0;
-    z-index: 1000;
-    background: rgba(0, 0, 0, 0.7);
-}
-
-.modal-content {
-    width: 90%;
-    max-width: 500px;
-    margin: 15% auto;
-    padding: 30px;
-    border-radius: 15px;
-    background: white;
-    text-align: center;
-}
-
-#kosten-details {
-    margin: 20px 0;
-    font-size: 1.15rem;
-}
-
-#kosten-details .kosten-gesamt {
-    margin-top: 10px;
-    color: #e74c3c;
-    font-size: 1.4rem;
+    right: 20px;
+    bottom: 20px;
+    z-index: 10;
+    max-width: 420px;
+    padding: 14px 18px;
+    border-radius: 8px;
+    color: #ffffff;
+    background: #22313f;
     font-weight: 800;
+    opacity: 0;
+    transform: translateY(12px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    pointer-events: none;
+}
+
+.toast.show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.toast.success {
+    background: #1f8d54;
+}
+
+.toast.error {
+    background: #b9362f;
 }
 
 @media (max-width: 1100px) {
-    .main-content {
+    body {
+        overflow: auto;
+    }
+
+    .dashboard {
         grid-template-columns: 1fr;
-    }
-}
-
-@media (max-width: 768px) {
-    .container {
-        padding: 12px;
+        grid-template-rows: auto auto auto auto auto;
+        height: auto;
+        min-height: 100vh;
     }
 
-    header h1 {
-        font-size: 1.8rem;
+    .topbar,
+    .entry-panel,
+    .camera-panel,
+    .active-panel,
+    .permanent-panel {
+        grid-column: 1;
+        grid-row: auto;
     }
 
-    .status-grid,
-    .parking-lot {
-        grid-template-columns: 1fr;
+    .camera-panel {
+        grid-template-rows: auto;
     }
 
-    .camera-meta {
-        flex-direction: column;
+    .camera-window {
+        aspect-ratio: 16 / 9;
     }
 
-    .parkvorgang-card {
-        grid-template-columns: 1fr;
-    }
-
+    .parkvorgang-card,
     .parkvorgang-info {
         grid-template-columns: 1fr;
     }

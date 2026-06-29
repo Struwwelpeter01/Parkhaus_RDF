@@ -7,93 +7,77 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>Parkhaus Management System</h1>
+    <main class="dashboard">
+        <header class="topbar">
+            <h1>Parkhaus Management</h1>
+            <div class="clock">
+                <span id="current-date">--.--.----</span>
+                <span id="current-time">--:--:--</span>
+            </div>
         </header>
 
-        <div class="main-content">
-            <div class="left-panel">
-                <div class="panel">
-                    <h2>Kennzeichen-Eingabe</h2>
-                    <div class="kennzeichen-input-section">
-                        <div class="form-group">
-                            <label for="kennzeichen-input">Kennzeichen (z.B. A-1234):</label>
-                            <input type="text" id="kennzeichen-input" placeholder="A-1234" pattern="[A-Z]-[0-9]{4}" maxlength="6" required>
-                        </div>
-                        <button id="btn-hinzufuegen" class="btn btn-success">+ Fahrzeug hinzufuegen</button>
-                    </div>
+        <section class="entry-panel">
+            <h2>Kennzeichen-Eingabe</h2>
+            <label for="kennzeichen-input">Kennzeichen</label>
+            <input type="text" id="kennzeichen-input" placeholder="A 1234" pattern="[A-Z] [0-9]{4}" maxlength="6" required>
+            <div class="button-row">
+                <button id="btn-hinzufuegen" class="btn btn-warning">Notfall Einfahrt</button>
+                <button id="btn-dauerparker" class="btn btn-success">Dauerparker hinzufügen</button>
+                <button id="btn-notfall-ausfahrt" class="btn btn-danger">Notfall Ausfahrt</button>
+            </div>
+            <div class="gate-status">
+                <div><strong>Einfahrt</strong><span id="gate-entry-status">Schranke zu</span></div>
+                <div><strong>Ausfahrt</strong><span id="gate-exit-status">Schranke zu</span></div>
+            </div>
+        </section>
+
+        <section class="camera-panel">
+            <div class="camera-card">
+                <h2>Einfahrt</h2>
+                <div class="camera-window">
+                    <img src="{{ url_for('get_kamera_stream') }}" alt="Livebild der Einfahrt-Kamera" id="kamera-stream">
                 </div>
-
-                <div class="panel camera-panel">
-                    <h2>Kamera-Ansicht</h2>
-                    <div class="camera-window">
-                        <img src="{{ url_for('get_kamera_stream') }}" alt="Livebild der Kamera" id="kamera-stream">
-                    </div>
-                    <div class="camera-meta">
-                        <span id="kamera-status">Kamera wird gestartet</span>
-                        <span id="kamera-kennzeichen">Erkannt: -</span>
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <h2>Parkhaus-Status</h2>
-                    <div class="status-grid">
-                        <div class="status-card">
-                            <div class="status-head">Einfahrt</div>
-                            <div class="ampel compact" id="ampel-einfahrt">
-                                <div class="licht gruen"></div>
-                                <div class="licht rot aktiv"></div>
-                            </div>
-                            <div class="status-box" id="status-einfahrt">Schranke geschlossen</div>
-                        </div>
-
-                        <div class="status-card">
-                            <div class="status-head">Ausfahrt</div>
-                            <div class="ampel compact" id="ampel-ausfahrt">
-                                <div class="licht gruen"></div>
-                                <div class="licht rot aktiv"></div>
-                            </div>
-                            <div class="status-box" id="status-ausfahrt">Schranke geschlossen</div>
-                        </div>
-
-                        <div class="status-card">
-                            <div class="status-head">Parkhaus Status</div>
-                            <div class="ampel compact" id="ampel-parkhaus">
-                                <div class="licht gruen aktiv"></div>
-                                <div class="licht rot"></div>
-                            </div>
-                            <div class="status-box" id="parkhaus-counter">0 / 15</div>
-                        </div>
-                    </div>
+                <div class="camera-meta">
+                    <span id="kamera-status">Kamera wird gestartet</span>
+                    <span id="kamera-kennzeichen">Erkannt: -</span>
                 </div>
             </div>
 
-            <div class="right-panel">
-                <div class="panel active-panel">
-                    <h2>Aktive Fahrzeuge</h2>
-                    <div id="aktive-parkvorgaenge">
-                        <div class="no-data">Keine Fahrzeuge im Parkhaus</div>
-                    </div>
-                    <div class="pagination" id="fahrzeug-pagination"></div>
+            <div class="camera-card">
+                <h2>Ausfahrt</h2>
+                <div class="camera-window">
+                    <img src="{{ url_for('get_ausfahrt_kamera_stream') }}" alt="Livebild der Ausfahrt-Kamera" id="kamera-stream-ausfahrt">
                 </div>
-
-                <div class="panel">
-                    <h2>Parkplatz-Belegung</h2>
-                    <div class="parking-lot" id="parking-lot"></div>
+                <div class="camera-meta">
+                    <span id="kamera-status-ausfahrt">Kamera wird gestartet</span>
+                    <span id="kamera-kennzeichen-ausfahrt">Erkannt: -</span>
                 </div>
             </div>
-        </div>
+        </section>
 
-        <div id="kosten-modal" class="modal">
-            <div class="modal-content">
-                <h3>Parkgebuehren</h3>
-                <div id="kosten-details"></div>
-                <button id="btn-bezahlen" class="btn btn-success">Bezahlen & Ausfahrt oeffnen</button>
-                <button id="btn-modal-close" class="btn btn-secondary">Schliessen</button>
+        <section class="active-panel">
+            <div class="section-head">
+                <h2>Aktive Fahrzeuge</h2>
+                <span id="parkhaus-counter">0 / 15</span>
             </div>
-        </div>
-    </div>
+            <div id="aktive-parkvorgaenge">
+                <div class="no-data">Keine Fahrzeuge im Parkhaus</div>
+            </div>
+            <div class="pagination" id="fahrzeug-pagination"></div>
+        </section>
+
+        <section class="permanent-panel">
+            <div class="section-head">
+                <h2>Dauerparker</h2>
+                <span class="price-badge">365 EUR</span>
+            </div>
+            <div id="dauerparker-list">
+                <div class="no-data">Keine Dauerparker gebucht</div>
+            </div>
+        </section>
+
+        <div id="toast" class="toast" role="status"></div>
+    </main>
 
     <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
 </body>

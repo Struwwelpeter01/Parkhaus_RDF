@@ -12,7 +12,7 @@ from typing import Any
 from camera_source import CameraSource
 
 
-PLATE_REGEX = re.compile(r"^[A-Z]-[0-9]{4}$")
+PLATE_REGEX = re.compile(r"^[A-Z] [0-9]{4}$")
 
 
 @dataclass
@@ -22,6 +22,7 @@ class CameraState:
     status: str = "Kamera nicht gestartet"
     active: bool = False
     updated_at: float = 0.0
+    line_blocked: bool = False
 
 
 class CameraPlateRecognizer:
@@ -48,14 +49,21 @@ class CameraPlateRecognizer:
         self._detection_frame: Any = None
         self._camera_kind = ""
         self._stable_box: tuple[float, float, float, float] | None = None
+        self._last_plate_box: tuple[float, float, float, float] | None = None
+        self._last_plate_box_at = 0.0
+        self._line_blocked_until = 0.0
+        self._snapshot_frame: Any = None
+        self._snapshot_plate = ""
+        self._red_line_baseline = 0.0
+        self._red_line_seen_at = 0.0
         self._stable_since = 0.0
         self._last_ocr_attempt_at = 0.0
         self._stable_seconds_required = self._read_float_env("PARKHAUS_STABLE_SECONDS", 0.0)
         self._ocr_retry_seconds = self._read_float_env("PARKHAUS_OCR_RETRY_SECONDS", 0.8)
         self._plate_hold_seconds = self._read_float_env("PARKHAUS_PLATE_HOLD_SECONDS", 2.5)
         self._ocr_votes: deque[tuple[str, float]] = deque(maxlen=6)
-        self._ocr_min_votes = int(os.getenv("PARKHAUS_OCR_MIN_VOTES", "2"))
-        self._ocr_min_score = self._read_float_env("PARKHAUS_OCR_MIN_SCORE", 2.0)
+        self._ocr_min_votes = int(os.getenv("PARKHAUS_OCR_MIN_VOTES", "3"))
+        self._ocr_min_score = self._read_float_env("PARKHAUS_OCR_MIN_SCORE", 2.8)
         self._ocr_char_min_score = self._read_float_env("PARKHAUS_OCR_CHAR_MIN_SCORE", 1.6)
         self._last_detected = ""
         self._last_valid_plate = ""
@@ -153,6 +161,7 @@ class CameraPlateRecognizer:
                 "status": self._state.status,
                 "active": self._state.active,
                 "updated_at": self._state.updated_at,
+                "line_blocked": self._state.line_blocked,
             }
 
     def get_jpeg(self) -> bytes:
@@ -166,6 +175,7 @@ class CameraPlateRecognizer:
         ocr_raw: str | None = None,
         status: str | None = None,
         active: bool | None = None,
+        line_blocked: bool | None = None,
     ) -> None:
         with self._lock:
             if plate is not None:
@@ -176,6 +186,8 @@ class CameraPlateRecognizer:
                 self._state.status = status
             if active is not None:
                 self._state.active = active
+            if line_blocked is not None:
+                self._state.line_blocked = line_blocked
             self._state.updated_at = time.time()
 
     def _set_jpeg(self, jpeg: bytes) -> None:
@@ -221,7 +233,9 @@ class CameraPlateRecognizer:
                     self._queue_detection_frame(frame)
                     self._last_detection_at = now
                 detected = self._last_detected
-                self._update_preview(frame, detected, cv2)
+                self._update_physical_red_line_state(frame, cv2)
+                line_blocked = time.time() < self._line_blocked_until
+                self._update_preview(frame, detected, cv2, line_blocked)
                 
                 # Unterschiedliche Logik für YOLO vs. Template Matching
                 if self._use_yolo and self._yolo_model:
@@ -231,6 +245,7 @@ class CameraPlateRecognizer:
                             ocr_raw="",
                             status="Kennzeichen erkannt, warte auf Stillstand",
                             active=True,
+                            line_blocked=line_blocked,
                         )
                     elif detected and detected != "ERKANNT":
                         self._set_state(
@@ -238,6 +253,7 @@ class CameraPlateRecognizer:
                             ocr_raw=self._last_ocr_raw,
                             status=f"Kennzeichen erkannt: {detected}",
                             active=True,
+                            line_blocked=line_blocked,
                         )
                     elif detected == "ERKANNT":
                         if self._ocr_reader is None:
@@ -249,7 +265,7 @@ class CameraPlateRecognizer:
                         else:
                             status = "Kennzeichen erkannt, OCR konnte den Text nicht lesen"
 
-                        self._set_state(ocr_raw=self._last_ocr_raw, status=status, active=True)
+                        self._set_state(ocr_raw=self._last_ocr_raw, status=status, active=True, line_blocked=line_blocked)
                     else:
                         if self._last_valid_plate and time.time() - self._last_plate_seen_at < self._plate_hold_seconds:
                             self._set_state(
@@ -257,9 +273,10 @@ class CameraPlateRecognizer:
                                 ocr_raw=self._last_ocr_raw,
                                 status=f"Kennzeichen erkannt: {self._last_valid_plate}",
                                 active=True,
+                                line_blocked=line_blocked,
                             )
                         else:
-                            self._set_state(plate="", status="Kennzeichen nicht erkannt", active=True)
+                            self._set_state(plate="", status="Kennzeichen nicht erkannt", active=True, line_blocked=line_blocked)
 
                     time.sleep(0.02)
                     continue
@@ -285,9 +302,9 @@ class CameraPlateRecognizer:
                         stable_hits = 0
 
                     if detected and stable_hits >= 2:
-                        self._set_state(plate=detected, status="Kennzeichen erkannt", active=True)
+                        self._set_state(plate=detected, status="Kennzeichen erkannt", active=True, line_blocked=line_blocked)
                     else:
-                        self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True)
+                        self._set_state(status=f"Kamera aktiv ({camera.kind})", active=True, line_blocked=line_blocked)
 
                 time.sleep(0.02)
         finally:
@@ -314,9 +331,10 @@ class CameraPlateRecognizer:
 
             self._last_detected = self._detect_plate(frame, cv2)
 
-    def _update_preview(self, frame: Any, detected: str, cv2: Any) -> None:
+    def _update_preview(self, frame: Any, detected: str, cv2: Any, line_blocked: bool = False) -> None:
         preview = frame.copy()
         height, width = preview.shape[:2]
+        box = self._current_plate_box()
 
         # Angepasste Label-Anzeige für YOLO vs. Template Matching
         if self._use_yolo and self._yolo_model:
@@ -338,6 +356,19 @@ class CameraPlateRecognizer:
         
         cv2.rectangle(preview, (0, 0), (width, 42), (44, 62, 80), -1)
         cv2.putText(preview, label, (16, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255), 2, cv2.LINE_AA)
+
+        if box:
+            x1, y1, x2, y2 = self._denormalize_box(box, width, height)
+            cv2.rectangle(preview, (x1, y1), (x2, y2), (39, 174, 96), 3)
+            plate_for_snapshot = detected if PLATE_REGEX.match(detected or "") else self._last_valid_plate
+            if plate_for_snapshot and plate_for_snapshot != self._snapshot_plate:
+                crop = frame[max(0, y1 - 10):min(height, y2 + 10), max(0, x1 - 10):min(width, x2 + 10)]
+                if crop.size > 0:
+                    self._snapshot_frame = crop.copy()
+                    self._snapshot_plate = plate_for_snapshot
+
+        if self._snapshot_frame is not None:
+            self._draw_snapshot(preview, cv2)
 
         ok, encoded = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), self._jpeg_quality])
         if ok:
@@ -388,6 +419,7 @@ class CameraPlateRecognizer:
                     # Extrahiere die Bounding Box Koordinaten
                     x1, y1, x2, y2 = box.xyxy[0].tolist()
                     x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+                    self._remember_plate_box((x1, y1, x2, y2), frame.shape)
                     stable_seconds = self._update_box_stability((x1, y1, x2, y2), frame.shape)
                     
                     # Füge kleine Margen hinzu für bessere OCR-Ergebnisse
@@ -418,6 +450,7 @@ class CameraPlateRecognizer:
             
             # Kein Kennzeichen erkannt
             self._reset_box_stability()
+            self._last_plate_box = None
             return ""
             
         except Exception as e:
@@ -457,6 +490,71 @@ class CameraPlateRecognizer:
         self._last_ocr_attempt_at = 0.0
         self._ocr_votes.clear()
 
+    def _remember_plate_box(self, box: tuple[int, int, int, int], frame_shape: Any) -> None:
+        height, width = frame_shape[:2]
+        x1, y1, x2, y2 = box
+        self._last_plate_box = (
+            x1 / max(width, 1),
+            y1 / max(height, 1),
+            x2 / max(width, 1),
+            y2 / max(height, 1),
+        )
+        self._last_plate_box_at = time.time()
+
+    def _current_plate_box(self) -> tuple[float, float, float, float] | None:
+        if self._last_plate_box and time.time() - self._last_plate_box_at < 1.2:
+            return self._last_plate_box
+        return None
+
+    def _update_physical_red_line_state(self, frame: Any, cv2: Any) -> None:
+        height, width = frame.shape[:2]
+        band = frame[int(height * 0.58):int(height * 0.92), int(width * 0.08):int(width * 0.92)]
+        if band.size == 0:
+            return
+
+        hsv = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
+        lower_red_a = cv2.inRange(hsv, (0, 70, 60), (12, 255, 255))
+        lower_red_b = cv2.inRange(hsv, (168, 70, 60), (180, 255, 255))
+        red_mask = cv2.bitwise_or(lower_red_a, lower_red_b)
+        red_ratio = cv2.countNonZero(red_mask) / max(red_mask.size, 1)
+        now = time.time()
+
+        if red_ratio > 0.008:
+            self._red_line_seen_at = now
+            if self._red_line_baseline == 0.0:
+                self._red_line_baseline = red_ratio
+            else:
+                self._red_line_baseline = (self._red_line_baseline * 0.96) + (red_ratio * 0.04)
+            return
+
+        if self._red_line_baseline > 0.012 and now - self._red_line_seen_at < 3.0:
+            self._line_blocked_until = now + 1.4
+
+    def _denormalize_box(self, box: tuple[float, float, float, float], width: int, height: int) -> tuple[int, int, int, int]:
+        x1, y1, x2, y2 = box
+        return (
+            max(0, min(width - 1, int(x1 * width))),
+            max(0, min(height - 1, int(y1 * height))),
+            max(0, min(width - 1, int(x2 * width))),
+            max(0, min(height - 1, int(y2 * height))),
+        )
+
+    def _draw_snapshot(self, preview: Any, cv2: Any) -> None:
+        height, width = preview.shape[:2]
+        snap_h = max(70, int(height * 0.22))
+        snap_w = max(120, int(width * 0.28))
+        snapshot = cv2.resize(self._snapshot_frame, (snap_w, snap_h), interpolation=cv2.INTER_AREA)
+        x1 = width - snap_w - 14
+        y1 = 54
+        x2 = x1 + snap_w
+        y2 = y1 + snap_h
+
+        cv2.rectangle(preview, (x1 - 4, y1 - 24), (x2 + 4, y2 + 4), (44, 62, 80), -1)
+        preview[y1:y2, x1:x2] = snapshot
+        cv2.rectangle(preview, (x1, y1), (x2, y2), (255, 255, 255), 2)
+        if self._snapshot_plate:
+            cv2.putText(preview, self._snapshot_plate, (x1, y1 - 7), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
+
     def _remember_ocr_vote(self, plate: str, score: float) -> str:
         self._ocr_votes.append((plate, score))
 
@@ -482,7 +580,7 @@ class CameraPlateRecognizer:
         positions: list[dict[str, float]] = [{} for _ in range(5)]
         counts: list[Counter[str]] = [Counter() for _ in range(5)]
         for plate, score in self._ocr_votes:
-            compact = plate.replace("-", "")
+            compact = plate.replace("-", "").replace(" ", "")
             if len(compact) != 5:
                 continue
             for index, char in enumerate(compact):
@@ -501,7 +599,7 @@ class CameraPlateRecognizer:
                 return ""
             chars.append(winner)
 
-        plate = f"{chars[0]}-{''.join(chars[1:])}"
+        plate = f"{chars[0]} {''.join(chars[1:])}"
         return plate if PLATE_REGEX.match(plate) else ""
 
     def _start_ocr_worker(self, plate_roi: Any, cv2: Any) -> None:
@@ -555,7 +653,7 @@ class CameraPlateRecognizer:
     def _read_plate_ocr(self, plate_image: Any, cv2: Any) -> tuple[str, float]:
         """
         Liest den Kennzeichen-Text mittels OCR.
-        Gibt das formatierte Kennzeichen zurück (z.B. A-1234) oder leer wenn nicht lesbar.
+        Gibt das formatierte Kennzeichen zurueck (z.B. A 1234) oder leer wenn nicht lesbar.
         """
         try:
             if self._ocr_reader is None:
@@ -715,7 +813,7 @@ class CameraPlateRecognizer:
         for letters, numbers in possible_parts:
             normalized_letters = letters.translate(letter_map)
             normalized_numbers = numbers.translate(number_map)
-            plate = f"{normalized_letters}-{normalized_numbers}"
+            plate = f"{normalized_letters} {normalized_numbers}"
             if PLATE_REGEX.match(plate):
                 candidates.append((plate, 1.0))
                 candidates.extend(self._common_confusion_variants(plate))
@@ -727,7 +825,7 @@ class CameraPlateRecognizer:
         return list(unique.items())
 
     def _common_confusion_variants(self, plate: str) -> list[tuple[str, float]]:
-        letter, numbers = plate.split("-", 1)
+        letter, numbers = plate.split(" ", 1)
         variants: dict[str, float] = {}
 
         number_options = [(char,) for char in numbers]
@@ -743,7 +841,7 @@ class CameraPlateRecognizer:
                     for fourth in number_options[3]:
                         variant_numbers = f"{first}{second}{third}{fourth}"
                         if variant_numbers != numbers:
-                            variants[f"{letter}-{variant_numbers}"] = 0.72
+                            variants[f"{letter} {variant_numbers}"] = 0.72
 
         return list(variants.items())
 
@@ -798,7 +896,7 @@ class CameraPlateRecognizer:
             if len(chars) != 5 or not chars[0].isalpha() or not all(char.isdigit() for char in chars[1:]):
                 return ""
 
-            plate = f"{chars[0]}-{''.join(chars[1:])}"
+            plate = f"{chars[0]} {''.join(chars[1:])}"
             return plate if PLATE_REGEX.match(plate) else ""
         except Exception:
             return ""
@@ -881,8 +979,8 @@ class CameraPlateRecognizer:
             chars.append(self._classify_char(char_img, cv2))
 
         plate = "".join(chars)
-        if len(plate) >= 5 and "-" not in plate:
-            plate = f"{plate[:1]}-{plate[1:]}"
+        if len(plate) >= 5 and "-" not in plate and " " not in plate:
+            plate = f"{plate[:1]} {plate[1:]}"
         return plate[:6]
 
     def _merge_boxes(self, boxes: list[tuple[int, int, int, int]]) -> list[tuple[int, int, int, int]]:

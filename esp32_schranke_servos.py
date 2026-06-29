@@ -42,6 +42,7 @@ AUSFAHRT_WINKEL_ZU = 1
 AUSFAHRT_WINKEL_OFFEN = 75
 
 ENTPRELL_ZEIT_MS = 300
+AUTO_SCHLIESSEN_MS = 15_000
 
 # True: Eingang ist aktiv, wenn 3.3 V/HIGH anliegt.
 # Finaler Aufbau:
@@ -95,6 +96,7 @@ class Schranke:
 
         self.ist_offen = False
         self.letzter_impuls_ms = 0
+        self.geoeffnet_seit_ms = 0
         self.letztes_signal_aktiv = self.signal_ist_aktiv()
 
         self.schliessen()
@@ -112,12 +114,14 @@ class Schranke:
         self.servo.set_winkel(self.winkel_offen)
         self.ampel_gruen()
         self.ist_offen = True
+        self.geoeffnet_seit_ms = ticks_ms()
 
     def schliessen(self):
         print(self.name, "geschlossen")
         self.servo.set_winkel(self.winkel_zu)
         self.ampel_rot()
         self.ist_offen = False
+        self.geoeffnet_seit_ms = 0
 
     def signal_ist_aktiv(self):
         wert = self.signal.value()
@@ -142,7 +146,13 @@ class Schranke:
 
     def update(self):
         if self.signal_erkannt():
-            self.oeffnen()
+            if self.ist_offen:
+                self.schliessen()
+            else:
+                self.oeffnen()
+
+        if self.ist_offen and ticks_diff(ticks_ms(), self.geoeffnet_seit_ms) >= AUTO_SCHLIESSEN_MS:
+            self.schliessen()
 
 
 einfahrt = Schranke(

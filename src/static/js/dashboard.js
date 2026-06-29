@@ -1,196 +1,239 @@
 document.addEventListener("DOMContentLoaded", function () {
     const kennzeichenInput = document.getElementById("kennzeichen-input");
     const btnHinzufuegen = document.getElementById("btn-hinzufuegen");
+    const btnDauerparker = document.getElementById("btn-dauerparker");
+    const btnNotfallAusfahrt = document.getElementById("btn-notfall-ausfahrt");
     const aktiveParkvorgaenge = document.getElementById("aktive-parkvorgaenge");
     const fahrzeugPagination = document.getElementById("fahrzeug-pagination");
-    const parkingLot = document.getElementById("parking-lot");
+    const dauerparkerList = document.getElementById("dauerparker-list");
     const parkhausCounter = document.getElementById("parkhaus-counter");
-    const ampelParkhaus = document.getElementById("ampel-parkhaus");
-    const ampelEinfahrt = document.getElementById("ampel-einfahrt");
-    const ampelAusfahrt = document.getElementById("ampel-ausfahrt");
-    const statusEinfahrt = document.getElementById("status-einfahrt");
-    const statusAusfahrt = document.getElementById("status-ausfahrt");
-    const kostenModal = document.getElementById("kosten-modal");
-    const kostenDetails = document.getElementById("kosten-details");
-    const btnBezahlen = document.getElementById("btn-bezahlen");
-    const btnModalClose = document.getElementById("btn-modal-close");
     const kameraStatus = document.getElementById("kamera-status");
     const kameraKennzeichen = document.getElementById("kamera-kennzeichen");
+    const kameraStatusAusfahrt = document.getElementById("kamera-status-ausfahrt");
+    const kameraKennzeichenAusfahrt = document.getElementById("kamera-kennzeichen-ausfahrt");
+    const currentDate = document.getElementById("current-date");
+    const currentTime = document.getElementById("current-time");
+    const gateEntryStatus = document.getElementById("gate-entry-status");
+    const gateExitStatus = document.getElementById("gate-exit-status");
+    const toast = document.getElementById("toast");
 
     const MAX_PARKPLAETZE = 15;
-    const PAGE_SIZE = 5;
-    const PARKPLATZ_STORAGE_KEY = "parkhaus_platz_belegung";
+    const PAGE_SIZE = 6;
+    const PAYMENT_WINDOW_MINUTES = 10;
+    const AUTO_ENTRY_MIN_HITS = 3;
+    const AUTO_EXIT_MIN_HITS = 3;
 
     let parkhausBelegt = 0;
     let aktiveVorgaenge = [];
     let currentPage = 1;
-    let pendingAusfahrtKennzeichen = null;
     let lastCameraPlate = "";
     let ignoredCameraPlate = "";
     let cameraFilledInput = false;
+    let lastExitAttemptPlate = "";
+    let lastExitAttemptAt = 0;
+    let entryCandidate = { plate: "", hits: 0 };
+    let exitCandidate = { plate: "", hits: 0 };
+    let lastAutoEntryPlate = "";
+    let lastAutoEntryAt = 0;
+    let dauerparker = [];
+    const gates = {
+        entry: { open: false, timer: null },
+        exit: { open: false, timer: null },
+    };
 
-    function ladePlatzBelegung() {
-        try {
-            return JSON.parse(localStorage.getItem(PARKPLATZ_STORAGE_KEY)) || {};
-        } catch (error) {
-            return {};
-        }
+    function normalizeKennzeichen(value) {
+        return value.trim().toUpperCase().replace(/-/g, " ").replace(/\s+/g, " ");
     }
 
-    function speicherePlatzBelegung(belegung) {
-        localStorage.setItem(PARKPLATZ_STORAGE_KEY, JSON.stringify(belegung));
+    function validateKennzeichen(kennzeichen) {
+        return /^[A-Z] [0-9]{4}$/.test(normalizeKennzeichen(kennzeichen));
     }
 
-    function freiePlaetze(belegung) {
-        const belegtePlaetze = new Set(Object.values(belegung));
-        return Array.from({ length: MAX_PARKPLAETZE }, (_, index) => index + 1)
-            .filter(platz => !belegtePlaetze.has(platz));
+    function routePlate(kennzeichen) {
+        return encodeURIComponent(normalizeKennzeichen(kennzeichen));
     }
 
-    function synchronisiereParkplaetze(vorgaenge) {
-        const belegung = ladePlatzBelegung();
-        const aktiveIds = new Set(vorgaenge.map(v => String(v.id)));
+    function showToast(message, type = "info") {
+        toast.textContent = message;
+        toast.className = `toast show ${type}`;
+        window.clearTimeout(showToast.timer);
+        showToast.timer = window.setTimeout(() => {
+            toast.className = "toast";
+        }, 4200);
+    }
 
-        Object.keys(belegung).forEach(id => {
-            if (!aktiveIds.has(id)) {
-                delete belegung[id];
-            }
+    function updateClock() {
+        const now = new Date();
+        currentDate.textContent = now.toLocaleDateString("de-DE", {
+            weekday: "short",
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
         });
-
-        vorgaenge.forEach(vorgang => {
-            const id = String(vorgang.id);
-            if (!belegung[id]) {
-                const frei = freiePlaetze(belegung);
-                if (frei.length > 0) {
-                    belegung[id] = frei[Math.floor(Math.random() * frei.length)];
-                }
-            }
-        });
-
-        speicherePlatzBelegung(belegung);
-        return belegung;
+        currentTime.textContent = now.toLocaleTimeString("de-DE");
     }
 
     function updateParkhausStatus() {
         parkhausCounter.textContent = `${parkhausBelegt} / ${MAX_PARKPLAETZE}`;
+        parkhausCounter.classList.toggle("full", parkhausBelegt >= MAX_PARKPLAETZE);
+    }
 
-        const parkhausGruen = ampelParkhaus.querySelector(".gruen");
-        const parkhausRot = ampelParkhaus.querySelector(".rot");
+    function setGate(gateName, open, reason = "") {
+        const gate = gates[gateName];
+        const statusElement = gateName === "entry" ? gateEntryStatus : gateExitStatus;
+        const changed = gate.open !== open;
+        gate.open = open;
+        statusElement.textContent = open ? "Schranke offen" : "Schranke zu";
+        statusElement.classList.toggle("open", open);
+        statusElement.title = reason;
 
-        if (parkhausBelegt >= MAX_PARKPLAETZE) {
-            parkhausGruen.classList.remove("aktiv");
-            parkhausRot.classList.add("aktiv");
-        } else {
-            parkhausGruen.classList.add("aktiv");
-            parkhausRot.classList.remove("aktiv");
+        if (gate.timer) {
+            window.clearTimeout(gate.timer);
+            gate.timer = null;
+        }
+
+        if (open) {
+            gate.timer = window.setTimeout(() => {
+                setGate(gateName, false, "15 Sekunden Fallback");
+            }, 15000);
+        }
+
+        if (changed && (open || reason !== "15 Sekunden Fallback")) {
+            triggerGateHardware(gateName, open ? "open" : "close");
         }
     }
 
-    function updateSchrankenAnzeige() {
-        aktualisiereSchrankenText(ampelEinfahrt, statusEinfahrt);
-        aktualisiereSchrankenText(ampelAusfahrt, statusAusfahrt);
+    async function triggerGateHardware(gateName, action) {
+        try {
+            await fetch(`/api/schranke/${gateName}/${action}`, { method: "POST" });
+        } catch (error) {
+            console.error("Fehler beim Schalten der Schranke:", error);
+        }
     }
 
-    function aktualisiereSchrankenText(ampel, statusElement) {
-        const offen = ampel.querySelector(".gruen").classList.contains("aktiv");
-
-        statusElement.textContent = offen ? "Schranke offen" : "Schranke geschlossen";
-        statusElement.style.background = offen ? "#d4edda" : "#ffffff";
-        statusElement.style.color = offen ? "#155724" : "#2c3e50";
+    function closeGateOnLine(gateName, result) {
+        if (result.line_blocked && gates[gateName].open) {
+            setGate(gateName, false, "Rote Linie beruehrt");
+        }
     }
 
-    function setAmpelState(ampel, isOpen) {
-        const gruen = ampel.querySelector(".gruen");
-        const rot = ampel.querySelector(".rot");
+    function displayPlateState(target, plate, result) {
+        const normalized = normalizeKennzeichen(plate || "");
+        const ocrRaw = (result.ocr_raw || "").trim();
 
-        gruen.classList.toggle("aktiv", isOpen);
-        rot.classList.toggle("aktiv", !isOpen);
-    }
-
-    function oeffneSchranke(schrankeAmpel) {
-        setAmpelState(schrankeAmpel, true);
-        updateSchrankenAnzeige();
-
-        setTimeout(() => {
-            setAmpelState(schrankeAmpel, false);
-            updateSchrankenAnzeige();
-        }, 5000);
-    }
-
-    function validateKennzeichen(kennzeichen) {
-        return /^[A-Z]-[0-9]{4}$/.test(kennzeichen.toUpperCase());
+        if (normalized && /^[A-Z] [0-9]{4}$/.test(normalized)) {
+            target.textContent = `Erkannt: ${normalized}`;
+            target.className = "ok";
+        } else if (normalized === "ERKANNT") {
+            target.textContent = "Kennzeichen erkannt, OCR liest...";
+            target.className = "warn";
+        } else if (result.status && result.status.includes("warte auf Stillstand")) {
+            target.textContent = "Bitte kurz stillhalten";
+            target.className = "warn";
+        } else if (ocrRaw) {
+            target.textContent = `OCR: ${ocrRaw}`;
+            target.className = "warn";
+        } else if (result.status && result.status.includes("nicht erkannt")) {
+            target.textContent = "Nicht erkannt";
+            target.className = "error";
+        } else {
+            target.textContent = "Erkannt: -";
+            target.className = "";
+        }
     }
 
     async function loadKameraKennzeichen() {
         try {
             const response = await fetch("/api/kamera/kennzeichen");
             const result = await response.json();
-            const plate = (result.plate || "").trim().toUpperCase();
-            const ocrRaw = (result.ocr_raw || "").trim();
+            const plate = normalizeKennzeichen(result.plate || "");
 
             kameraStatus.textContent = result.status || "Kamera aktiv";
-            
-            // Bessere Formatierung für YOLO11 + OCR Erkennungen
-            if (plate && /^[A-Z]-\d{4}$/.test(plate)) {
-                // Vollständiges Kennzeichen erkannt (OCR erfolgreich)
-                kameraKennzeichen.textContent = `✅ Erkannt: ${plate}`;
-                kameraKennzeichen.style.color = "#27ae60";
-            } else if (plate === "ERKANNT") {
-                // Nur YOLO erkannt, OCR lädt noch
-                kameraKennzeichen.textContent = "🔄 Kennzeichen erkannt (OCR lädt...)";
-                kameraKennzeichen.style.color = "#f39c12";
-            } else if (result.status && result.status.includes("OCR liest")) {
-                kameraKennzeichen.textContent = "Kennzeichen erkannt - OCR liest...";
-                kameraKennzeichen.style.color = "#f39c12";
-            } else if (result.status && result.status.includes("warte auf Stillstand")) {
-                kameraKennzeichen.textContent = "Kennzeichen erkannt - bitte kurz stillhalten";
-                kameraKennzeichen.style.color = "#f39c12";
-            } else if (ocrRaw) {
-                kameraKennzeichen.textContent = `OCR-Rohtext: ${ocrRaw}`;
-                kameraKennzeichen.style.color = "#f39c12";
-            } else if (result.status && result.status.includes("nicht erkannt")) {
-                kameraKennzeichen.textContent = "❌ Kennzeichen nicht erkannt";
-                kameraKennzeichen.style.color = "#e74c3c";
-            } else {
-                // Fallback für Template Matching
-                kameraKennzeichen.textContent = `Erkannt: ${plate || "-"}`;
-                kameraKennzeichen.style.color = "#2c3e50";
-            }
+            displayPlateState(kameraKennzeichen, plate, result);
+            closeGateOnLine("entry", result);
 
-            // Nur weiterführen wenn echtes Kennzeichen (nicht ERKANNT oder leer)
-            if (!plate || plate === ignoredCameraPlate || plate === lastCameraPlate || plate === "ERKANNT") {
+            if (!plate || plate === ignoredCameraPlate || plate === "ERKANNT") {
                 return;
             }
 
-            // Validiere Kennzeichen-Format
-            if (!/^[A-Z]-\d{4}$/.test(plate)) {
+            if (!validateKennzeichen(plate)) {
                 return;
             }
 
             lastCameraPlate = plate;
             kennzeichenInput.value = plate;
             cameraFilledInput = true;
+            await maybeAutoEntry(plate);
         } catch (error) {
-            console.error("Fehler beim Laden des Kamera-Kennzeichens:", error);
+            console.error("Fehler beim Laden des Einfahrt-Kennzeichens:", error);
+        }
+    }
+
+    async function maybeAutoEntry(plate) {
+        if (entryCandidate.plate === plate) {
+            entryCandidate.hits += 1;
+        } else {
+            entryCandidate = { plate, hits: 1 };
+        }
+
+        const now = Date.now();
+        if (entryCandidate.hits < AUTO_ENTRY_MIN_HITS) {
+            return;
+        }
+        if (plate === lastAutoEntryPlate && now - lastAutoEntryAt < 15000) {
+            return;
+        }
+
+        lastAutoEntryPlate = plate;
+        lastAutoEntryAt = now;
+        await starteParkvorgang("normal", plate, true);
+    }
+
+    async function loadAusfahrtKameraKennzeichen() {
+        try {
+            const response = await fetch("/api/kamera/kennzeichen/ausfahrt");
+            const result = await response.json();
+            const plate = normalizeKennzeichen(result.plate || "");
+
+            kameraStatusAusfahrt.textContent = result.status || "Kamera aktiv";
+            displayPlateState(kameraKennzeichenAusfahrt, plate, result);
+            closeGateOnLine("exit", result);
+
+            if (!validateKennzeichen(plate)) {
+                return;
+            }
+
+            if (exitCandidate.plate === plate) {
+                exitCandidate.hits += 1;
+            } else {
+                exitCandidate = { plate, hits: 1 };
+            }
+
+            const now = Date.now();
+            if (exitCandidate.hits < AUTO_EXIT_MIN_HITS || (plate === lastExitAttemptPlate && now - lastExitAttemptAt < 8000)) {
+                return;
+            }
+
+            lastExitAttemptPlate = plate;
+            lastExitAttemptAt = now;
+            await pruefeAusfahrt(plate);
+        } catch (error) {
+            console.error("Fehler beim Laden des Ausfahrt-Kennzeichens:", error);
         }
     }
 
     async function loadData() {
         await loadAktiveParkvorgaenge();
+        await loadDauerparker();
         updateParkhausStatus();
-        updateSchrankenAnzeige();
     }
 
     async function loadAktiveParkvorgaenge() {
         try {
             const response = await fetch("/api/parkvorgaenge/aktiv");
             const vorgaenge = await response.json();
-            const belegung = synchronisiereParkplaetze(vorgaenge);
 
-            aktiveVorgaenge = vorgaenge.map(vorgang => ({
-                ...vorgang,
-                parkplatz: belegung[String(vorgang.id)]
-            }));
+            aktiveVorgaenge = vorgaenge;
             parkhausBelegt = aktiveVorgaenge.length;
 
             const pageCount = Math.max(1, Math.ceil(aktiveVorgaenge.length / PAGE_SIZE));
@@ -198,10 +241,33 @@ document.addEventListener("DOMContentLoaded", function () {
 
             renderAktiveFahrzeuge();
             renderPagination(pageCount);
-            renderParkplaetze(belegung);
         } catch (error) {
             console.error("Fehler beim Laden der Parkvorgaenge:", error);
         }
+    }
+
+    async function loadDauerparker() {
+        try {
+            const response = await fetch("/api/dauerparker");
+            dauerparker = await response.json();
+            renderDauerparker();
+        } catch (error) {
+            console.error("Fehler beim Laden der Dauerparker:", error);
+        }
+    }
+
+    function renderDauerparker() {
+        if (!dauerparker.length) {
+            dauerparkerList.innerHTML = '<div class="no-data">Keine Dauerparker gebucht</div>';
+            return;
+        }
+
+        dauerparkerList.innerHTML = dauerparker.map(item => `
+            <div class="dauerparker-row">
+                <strong>${escapeHtml(item.kennzeichen)}</strong>
+                <span>gebucht</span>
+            </div>
+        `).join("");
     }
 
     function renderAktiveFahrzeuge() {
@@ -213,18 +279,33 @@ document.addEventListener("DOMContentLoaded", function () {
         const start = (currentPage - 1) * PAGE_SIZE;
         const pageItems = aktiveVorgaenge.slice(start, start + PAGE_SIZE);
 
-        aktiveParkvorgaenge.innerHTML = pageItems.map(v => `
-            <div class="parkvorgang-card">
-                <h4>${v.kennzeichen}</h4>
-                <div class="parkvorgang-info">
-                    <div><strong>Einfahrt</strong>${new Date(v.einfahrt_zeit).toLocaleTimeString("de-DE")}</div>
-                    <div><strong>Dauer</strong>${v.dauer_minuten} Min</div>
-                    <div><strong>Preis</strong>EUR ${v.kosten.toFixed(2)}</div>
-                    <div><strong>Platz</strong>${v.parkplatz || "-"}</div>
+        aktiveParkvorgaenge.innerHTML = pageItems.map(v => {
+            const isPermanent = v.fahrzeug_typ === "dauerparker";
+            const statusText = isPermanent ? "Dauerparker" : "Normal";
+            const paidUntil = v.bezahlt_bis ? new Date(v.bezahlt_bis) : null;
+            const secondsLeft = paidUntil ? Math.max(0, Math.floor((paidUntil - new Date()) / 1000)) : 0;
+            const paidText = isPermanent
+                ? "Festpreis EUR 365"
+                : v.bezahlt
+                    ? `bezahlt (${Math.ceil(secondsLeft / 60)} Min)`
+                    : "offen";
+
+            return `
+                <div class="parkvorgang-card ${v.ausfahrt_blockiert ? "blocked" : ""}">
+                    <h3>${escapeHtml(v.kennzeichen)}</h3>
+                    <div class="parkvorgang-info">
+                        <div><strong>Status</strong>${statusText}</div>
+                        <div><strong>Einfahrt</strong>${formatTime(v.einfahrt_zeit)}</div>
+                        <div><strong>Dauer</strong>${v.dauer_minuten} Min</div>
+                        <div><strong>Preis</strong>EUR ${Number(v.kosten).toFixed(2)}</div>
+                    </div>
+                    <label class="paid-check">
+                        <input type="checkbox" class="bezahlt-checkbox" data-id="${v.id}" ${v.bezahlt ? "checked" : ""} ${isPermanent ? "disabled" : ""}>
+                        <span>${paidText}</span>
+                    </label>
                 </div>
-                <button class="btn btn-primary btn-ausfahrt" data-kennzeichen="${v.kennzeichen}">Ausfahrt</button>
-            </div>
-        `).join("");
+            `;
+        }).join("");
     }
 
     function renderPagination(pageCount) {
@@ -240,85 +321,176 @@ document.addEventListener("DOMContentLoaded", function () {
         }).join("");
     }
 
-    function renderParkplaetze(belegung) {
-        const platzNachId = Object.entries(belegung).reduce((result, [id, platz]) => {
-            result[platz] = id;
-            return result;
-        }, {});
-
-        parkingLot.innerHTML = Array.from({ length: MAX_PARKPLAETZE }, (_, index) => {
-            const platz = index + 1;
-            const occupied = Boolean(platzNachId[platz]);
-            return `
-                <div class="parking-space${occupied ? " occupied" : ""}">
-                    <span class="space-number">${platz}</span>
-                    <span class="space-led" title="${occupied ? "Belegt" : "Frei"}"></span>
-                </div>
-            `;
-        }).join("");
-    }
-
-    function handleAusfahrt(kennzeichen) {
-        const vorgang = aktiveVorgaenge.find(v => v.kennzeichen === kennzeichen);
-        if (!vorgang) {
-            alert("Dieses Fahrzeug ist nicht mehr in der aktiven Liste.");
-            loadData();
-            return;
-        }
-
-        pendingAusfahrtKennzeichen = kennzeichen;
-        showKostenModal(vorgang.kosten, vorgang.dauer_minuten);
-    }
-
-    function showKostenModal(kosten, dauerMinuten) {
-        kostenDetails.innerHTML = `
-            <div class="kosten-breakdown">
-                <div>Grundgebuehr: EUR 2.00</div>
-                <div>Dauer: ${dauerMinuten} Minuten</div>
-                <div>Zusatzkosten: EUR ${(kosten - 2.0).toFixed(2)}</div>
-                <div class="kosten-gesamt">Gesamt: EUR ${kosten.toFixed(2)}</div>
-            </div>
-        `;
-        kostenModal.style.display = "block";
-    }
-
-    btnHinzufuegen.addEventListener("click", async () => {
-        const kennzeichen = kennzeichenInput.value.trim().toUpperCase();
+    async function starteParkvorgang(fahrzeugTyp, erkanntesKennzeichen = "", automatisch = false) {
+        const kennzeichen = normalizeKennzeichen(erkanntesKennzeichen || kennzeichenInput.value);
 
         if (!kennzeichen) {
-            alert("Bitte geben Sie ein Kennzeichen ein.");
+            showToast("Bitte Kennzeichen eingeben.", "error");
             return;
         }
 
         if (!validateKennzeichen(kennzeichen)) {
-            alert('Ungueltiges Format! Verwenden Sie z.B. "A-1234"');
-            return;
-        }
-
-        if (parkhausBelegt >= MAX_PARKPLAETZE) {
-            alert("Parkhaus ist voll! Keine Einfahrt moeglich.");
+            showToast('Ungueltiges Format. Beispiel: "A 1234"', "error");
             return;
         }
 
         try {
-            const response = await fetch(`/api/parkvorgang/start/${kennzeichen}`, { method: "POST" });
+            const response = await fetch(`/api/parkvorgang/start/${routePlate(kennzeichen)}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ fahrzeug_typ: fahrzeugTyp }),
+            });
             const result = await response.json();
 
             if (response.ok) {
                 ignoredCameraPlate = kennzeichen;
                 lastCameraPlate = kennzeichen;
                 cameraFilledInput = false;
-                kennzeichenInput.value = "";
-                oeffneSchranke(ampelEinfahrt);
+                if (!automatisch) {
+                    kennzeichenInput.value = "";
+                }
+                setGate("entry", true, "Einfahrt erlaubt");
+                showToast(automatisch ? `${kennzeichen}: automatisch eingefahren.` : "Notfall-Einfahrt eingetragen.", "success");
                 await loadData();
             } else {
-                alert("Fehler: " + result.error);
+                showToast(result.error || "Einfahrt abgelehnt.", "error");
             }
         } catch (error) {
-            console.error("Fehler bei Hinzufuegung:", error);
-            alert("Netzwerkfehler");
+            console.error("Fehler bei Einfahrt:", error);
+            showToast("Netzwerkfehler bei der Einfahrt.", "error");
         }
-    });
+    }
+
+    async function bucheDauerparker() {
+        const kennzeichen = normalizeKennzeichen(kennzeichenInput.value);
+
+        if (!kennzeichen) {
+            showToast("Bitte Kennzeichen fuer Dauerparker eingeben.", "error");
+            return;
+        }
+
+        if (!validateKennzeichen(kennzeichen)) {
+            showToast('Ungueltiges Format. Beispiel: "A 1234"', "error");
+            return;
+        }
+
+        try {
+            const response = await fetch("/api/dauerparker", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ kennzeichen }),
+            });
+            const result = await response.json();
+
+            if (response.ok) {
+                kennzeichenInput.value = "";
+                showToast(`${result.kennzeichen}: Dauerparker gebucht.`, "success");
+                await loadData();
+            } else {
+                showToast(result.error || "Dauerparker konnte nicht gebucht werden.", "error");
+            }
+        } catch (error) {
+            console.error("Fehler beim Buchen des Dauerparkers:", error);
+            showToast("Netzwerkfehler beim Dauerparker.", "error");
+        }
+    }
+
+    async function pruefeAusfahrt(kennzeichen) {
+        try {
+            const response = await fetch(`/api/parkvorgang/end/${routePlate(kennzeichen)}`, { method: "POST" });
+            const result = await response.json();
+
+            if (response.ok) {
+                setGate("exit", true, "Ausfahrt erlaubt");
+                showToast(`${kennzeichen}: Ausfahrt erlaubt.`, "success");
+                await loadData();
+                return;
+            }
+
+            showToast(result.error || "Ausfahrt abgelehnt.", "error");
+            await loadData();
+        } catch (error) {
+            console.error("Fehler bei Ausfahrt:", error);
+            showToast("Netzwerkfehler bei der Ausfahrt.", "error");
+        }
+    }
+
+    async function notfallAusfahrt() {
+        const kennzeichen = normalizeKennzeichen(kennzeichenInput.value);
+
+        if (!kennzeichen) {
+            showToast("Bitte Kennzeichen fuer die Notfall-Ausfahrt eingeben.", "error");
+            return;
+        }
+
+        if (!validateKennzeichen(kennzeichen)) {
+            showToast('Ungueltiges Format. Beispiel: "A 1234"', "error");
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/parkvorgang/notfall-ausfahrt/${routePlate(kennzeichen)}`, { method: "POST" });
+            const result = await response.json();
+
+            if (response.ok) {
+                kennzeichenInput.value = "";
+                setGate("exit", true, "Notfall-Ausfahrt");
+                showToast(`${kennzeichen}: Notfall-Ausfahrt ausgeloest.`, "success");
+                await loadData();
+            } else {
+                showToast(result.error || "Notfall-Ausfahrt abgelehnt.", "error");
+            }
+        } catch (error) {
+            console.error("Fehler bei Notfall-Ausfahrt:", error);
+            showToast("Netzwerkfehler bei der Notfall-Ausfahrt.", "error");
+        }
+    }
+
+    async function setBezahlt(id, bezahlt) {
+        try {
+            const response = await fetch(`/api/parkvorgang/${id}/bezahlt`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ bezahlt }),
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                showToast(result.error || "Bezahlstatus konnte nicht gesetzt werden.", "error");
+            } else if (bezahlt) {
+                showToast(`Bezahlt markiert. Ausfahrt innerhalb von ${PAYMENT_WINDOW_MINUTES} Minuten.`, "success");
+            }
+            await loadData();
+        } catch (error) {
+            console.error("Fehler beim Setzen des Bezahlstatus:", error);
+            showToast("Netzwerkfehler beim Bezahlstatus.", "error");
+        }
+    }
+
+    function formatTime(value) {
+        return new Date(value).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    }
+
+    function formatDateTime(value) {
+        return new Date(value).toLocaleString("de-DE", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    }
+
+    function escapeHtml(value) {
+        return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    btnHinzufuegen.addEventListener("click", () => starteParkvorgang("normal"));
+    btnDauerparker.addEventListener("click", bucheDauerparker);
+    btnNotfallAusfahrt.addEventListener("click", notfallAusfahrt);
 
     kennzeichenInput.addEventListener("keypress", event => {
         if (event.key === "Enter") {
@@ -327,7 +499,7 @@ document.addEventListener("DOMContentLoaded", function () {
     });
 
     kennzeichenInput.addEventListener("input", () => {
-        const value = kennzeichenInput.value.trim().toUpperCase();
+        const value = normalizeKennzeichen(kennzeichenInput.value);
         if (cameraFilledInput && !value && lastCameraPlate) {
             ignoredCameraPlate = lastCameraPlate;
             cameraFilledInput = false;
@@ -338,11 +510,12 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     });
 
-    aktiveParkvorgaenge.addEventListener("click", event => {
-        const button = event.target.closest(".btn-ausfahrt");
-        if (button) {
-            handleAusfahrt(button.dataset.kennzeichen);
+    aktiveParkvorgaenge.addEventListener("change", event => {
+        const checkbox = event.target.closest(".bezahlt-checkbox");
+        if (!checkbox) {
+            return;
         }
+        setBezahlt(Number(checkbox.dataset.id), checkbox.checked);
     });
 
     fahrzeugPagination.addEventListener("click", event => {
@@ -356,51 +529,13 @@ document.addEventListener("DOMContentLoaded", function () {
         renderPagination(Math.max(1, Math.ceil(aktiveVorgaenge.length / PAGE_SIZE)));
     });
 
-    btnBezahlen.addEventListener("click", async () => {
-        if (!pendingAusfahrtKennzeichen) {
-            kostenModal.style.display = "none";
-            return;
-        }
-
-        try {
-            const response = await fetch(`/api/parkvorgang/end/${pendingAusfahrtKennzeichen}`, { method: "POST" });
-            const result = await response.json();
-
-            if (response.ok) {
-                kostenModal.style.display = "none";
-                pendingAusfahrtKennzeichen = null;
-                oeffneSchranke(ampelAusfahrt);
-                await loadData();
-            } else {
-                alert("Fehler: " + result.error);
-            }
-        } catch (error) {
-            console.error("Fehler bei Ausfahrt:", error);
-            alert("Netzwerkfehler");
-        }
-    });
-
-    btnModalClose.addEventListener("click", () => {
-        kostenModal.style.display = "none";
-        pendingAusfahrtKennzeichen = null;
-    });
-
-    const demoBtn = document.createElement("button");
-    demoBtn.textContent = "Demo: Zufallskennzeichen";
-    demoBtn.className = "btn btn-secondary";
-    demoBtn.style.marginTop = "10px";
-    demoBtn.addEventListener("click", () => {
-        const buchstaben = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        const prefix = buchstaben[Math.floor(Math.random() * buchstaben.length)] +
-            buchstaben[Math.floor(Math.random() * buchstaben.length)];
-        const nummer = String(Math.floor(Math.random() * 9000) + 1000);
-        kennzeichenInput.value = `${prefix}-${nummer}`;
-        cameraFilledInput = false;
-    });
-    document.querySelector(".kennzeichen-input-section").appendChild(demoBtn);
-
+    updateClock();
     loadData();
     loadKameraKennzeichen();
+    loadAusfahrtKameraKennzeichen();
+    setInterval(updateClock, 1000);
     setInterval(loadData, 5000);
-    setInterval(loadKameraKennzeichen, 250);
+    setInterval(renderAktiveFahrzeuge, 1000);
+    setInterval(loadKameraKennzeichen, 300);
+    setInterval(loadAusfahrtKameraKennzeichen, 450);
 });
