@@ -32,7 +32,22 @@ rpicam-hello --timeout 3000
 
 ## 2. Projekt auf den Pi holen
 
-Am einfachsten ueber GitHub:
+Vor dem ersten Installieren auf dem Pi muss der aktuelle Stand vom Laptop auf
+GitHub hochgeladen werden.
+
+Auf dem Laptop im Projektordner:
+
+```bash
+git status
+git add .
+git commit -m "Aktueller Stand fuer Raspberry Pi"
+git push
+```
+
+Wenn `git status` sagt, dass es keine Aenderungen gibt, brauchst du keinen neuen
+Commit.
+
+Danach auf dem Raspberry Pi:
 
 ```bash
 cd ~
@@ -50,6 +65,10 @@ git pull
 
 Der Laptop muss dafuer bei der Praesentation nicht dabei sein. GitHub wird nur
 zum Uebertragen des Projekts auf den Pi benutzt.
+
+Wichtig: Laufzeitdaten wie `data/parkhaus.db`, `data/manifest.csv`, `data/raw/`,
+`.venv/` und `__pycache__/` gehoeren nicht in Git. Sie bleiben lokal auf dem Pi,
+damit spaetere Updates mit `git pull` nicht blockiert werden.
 
 ## 3. Python-Umgebung einrichten
 
@@ -166,7 +185,93 @@ Nach einem Neustart startet der Pi das Parkhaus-Programm automatisch:
 sudo reboot
 ```
 
-## 7. Kamera und KI-Modell
+## 7. Projekt spaeter updaten
+
+Wenn du am Laptop etwas am Code geaendert hast, erst auf GitHub hochladen.
+
+Auf dem Laptop im Projektordner:
+
+```bash
+git status
+git add .
+git commit -m "Update"
+git push
+```
+
+Dann auf dem Raspberry Pi das laufende Programm beenden:
+
+```bash
+CTRL+C
+```
+
+Danach auf dem Pi:
+
+```bash
+cd ~/Parkhaus_RDF
+git pull
+source .venv/bin/activate
+pip install -r requirements.txt
+python run.py
+```
+
+Normalerweise ist das alles. Die Datenbank und CSV-Dateien auf dem Pi bleiben
+dabei erhalten, weil sie nicht mehr von Git verwaltet werden.
+
+Falls `git pull` trotzdem meldet, dass lokale Aenderungen vorhanden sind:
+
+```bash
+cd ~/Parkhaus_RDF
+git status
+```
+
+Wenn dort nur lokale Laufzeitdateien stehen, die nicht wichtig sind, kannst du
+sie ignorieren oder sichern. Wenn dort echte Code-Dateien stehen, hast du auf
+dem Pi Code geaendert. Dann gibt es zwei sinnvolle Wege:
+
+Weg A, Pi-Aenderungen verwerfen und Laptop/GitHub als Hauptstand benutzen:
+
+```bash
+git restore <DATEINAME>
+git pull
+```
+
+Beispiel:
+
+```bash
+git restore run.py
+git pull
+```
+
+Weg B, Pi-Aenderungen behalten und nach GitHub hochladen:
+
+```bash
+git add .
+git commit -m "Aenderungen vom Raspberry Pi"
+git push
+```
+
+Danach kannst du am Laptop wieder `git pull` machen.
+
+Empfehlung fuer euer Projekt: Code nur am Laptop bearbeiten und auf dem Pi nur
+`git pull` machen. Der Pi ist dann das Geraet zum Ausfuehren und Praesentieren.
+
+### Einmalig, wenn der Pi wegen `data/parkhaus.db` nicht pullen will
+
+Falls der Pi beim ersten Update meldet, dass `data/parkhaus.db` geaendert wurde
+und deshalb kein `git pull` moeglich ist, sichere die Datenbank einmal kurz:
+
+```bash
+cd ~/Parkhaus_RDF
+cp data/parkhaus.db data/parkhaus.db.backup
+git restore data/parkhaus.db
+git pull
+mv data/parkhaus.db.backup data/parkhaus.db
+```
+
+Danach ist `data/parkhaus.db` lokal auf dem Pi und wird von Git ignoriert. Ab
+dann sollte ein normales `git pull` funktionieren.
+
+## 8. Kamera und KI-Modell
 
 Das Programm verwendet auf dem Pi automatisch `picamera2`. Wenn das nicht klappt, versucht es als Fallback eine normale USB-/OpenCV-Kamera mit Kameraindex `0`.
 
@@ -178,7 +283,7 @@ runs/detect/license_plate_detection-3/weights/best.pt
 
 Deshalb sollte der Ordner `runs` mit auf den Pi kopiert werden.
 
-## 8. Haefige Probleme
+## 9. Haefige Probleme
 
 Wenn der Browser nicht automatisch aufgeht:
 

@@ -1,0 +1,16 @@
+# Python/runtime files
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local application state created while the program runs
+data/parkhaus.db
+data/manifest.csv
+data/raw/
+
+# Local editor/system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
