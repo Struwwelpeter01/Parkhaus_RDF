@@ -49,6 +49,25 @@ document.addEventListener("DOMContentLoaded", function () {
         return /^[A-Z] [0-9]{4}$/.test(normalizeKennzeichen(kennzeichen));
     }
 
+    function extractKennzeichen(value) {
+        const raw = String(value || "").toUpperCase();
+        const direct = normalizeKennzeichen(raw);
+        if (validateKennzeichen(direct)) {
+            return direct;
+        }
+
+        const cleaned = raw.replace(/[^A-Z0-9]/g, "");
+        for (let index = 0; index <= cleaned.length - 5; index += 1) {
+            const compact = cleaned.slice(index, index + 5);
+            const candidate = `${compact.slice(0, 1)} ${compact.slice(1)}`;
+            if (validateKennzeichen(candidate)) {
+                return candidate;
+            }
+        }
+
+        return "";
+    }
+
     function routePlate(kennzeichen) {
         return encodeURIComponent(normalizeKennzeichen(kennzeichen));
     }
@@ -175,7 +194,7 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch("/api/kamera/kennzeichen");
             const result = await response.json();
-            const plate = normalizeKennzeichen(result.plate || "");
+            const plate = normalizeKennzeichen(result.plate || extractKennzeichen(result.ocr_raw));
 
             kameraStatus.textContent = result.status || "Kamera aktiv";
             displayPlateState(kameraKennzeichen, plate, result);
@@ -239,7 +258,7 @@ document.addEventListener("DOMContentLoaded", function () {
         try {
             const response = await fetch("/api/kamera/kennzeichen/ausfahrt");
             const result = await response.json();
-            const plate = normalizeKennzeichen(result.plate || "");
+            const plate = normalizeKennzeichen(result.plate || extractKennzeichen(result.ocr_raw));
 
             kameraStatusAusfahrt.textContent = result.status || "Kamera aktiv";
             displayPlateState(kameraKennzeichenAusfahrt, plate, result);

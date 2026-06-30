@@ -73,6 +73,7 @@ class CameraPlateRecognizer:
         self._yolo_conf = self._read_float_env("PARKHAUS_YOLO_CONF", 0.35)
         self._yolo_imgsz = int(os.getenv("PARKHAUS_YOLO_IMGSZ", "640"))
         self._jpeg_quality = int(os.getenv("PARKHAUS_JPEG_QUALITY", "65"))
+        self._box_hold_seconds = self._read_float_env("PARKHAUS_BOX_HOLD_SECONDS", 3.5)
         self._ocr_canvas_size = int(os.getenv("PARKHAUS_OCR_CANVAS_SIZE", "768"))
         self._ocr_scale_width = int(os.getenv("PARKHAUS_OCR_SCALE_WIDTH", "360"))
         self._ocr_fast_mode = os.getenv("PARKHAUS_OCR_FAST_MODE", "1") == "1"
@@ -450,7 +451,6 @@ class CameraPlateRecognizer:
             
             # Kein Kennzeichen erkannt
             self._reset_box_stability()
-            self._last_plate_box = None
             return ""
             
         except Exception as e:
@@ -502,7 +502,7 @@ class CameraPlateRecognizer:
         self._last_plate_box_at = time.time()
 
     def _current_plate_box(self) -> tuple[float, float, float, float] | None:
-        if self._last_plate_box and time.time() - self._last_plate_box_at < 1.2:
+        if self._last_plate_box and time.time() - self._last_plate_box_at < self._box_hold_seconds:
             return self._last_plate_box
         return None
 
@@ -630,8 +630,10 @@ class CameraPlateRecognizer:
 
             detected_plate = self._remember_ocr_vote(plate_text, plate_score)
             if not detected_plate:
+                self._last_valid_plate = plate_text
+                self._last_plate_seen_at = time.time()
                 self._set_state(
-                    plate="",
+                    plate=plate_text,
                     ocr_raw=self._last_ocr_raw,
                     status=f"Kennzeichen wird stabilisiert: {plate_text}",
                     active=True,
