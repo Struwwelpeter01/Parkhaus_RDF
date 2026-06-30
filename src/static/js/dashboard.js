@@ -37,8 +37,8 @@ document.addEventListener("DOMContentLoaded", function () {
     let lastAutoEntryAt = 0;
     let dauerparker = [];
     const gates = {
-        entry: { open: false, timer: null },
-        exit: { open: false, timer: null },
+        entry: { open: false, timer: null, blockedPlate: "" },
+        exit: { open: false, timer: null, blockedPlate: "" },
     };
 
     function normalizeKennzeichen(value) {
@@ -96,9 +96,16 @@ document.addEventListener("DOMContentLoaded", function () {
             gate.timer = window.setTimeout(() => {
                 setGate(gateName, false, "15 Sekunden Fallback");
             }, 15000);
+        } else {
+            gate.blockedPlate = "";
+            if (gateName === "entry") {
+                entryCandidate = { plate: "", hits: 0 };
+            } else {
+                exitCandidate = { plate: "", hits: 0 };
+            }
         }
 
-        if (changed && (open || reason !== "15 Sekunden Fallback")) {
+        if (changed) {
             triggerGateHardware(gateName, open ? "open" : "close");
         }
     }
@@ -115,6 +122,28 @@ document.addEventListener("DOMContentLoaded", function () {
         if (result.line_blocked && gates[gateName].open) {
             setGate(gateName, false, "Rote Linie beruehrt");
         }
+    }
+
+    function handleGateOpenRecognition(gateName, plate, target, direction) {
+        const gate = gates[gateName];
+        if (!gate.open || !validateKennzeichen(plate)) {
+            return false;
+        }
+
+        target.textContent = `${direction} gesperrt bis Schranke zu`;
+        target.className = "error";
+
+        if (gate.blockedPlate !== plate) {
+            gate.blockedPlate = plate;
+            showToast(`${direction} gesperrt: Schranke ist noch offen.`, "error");
+        }
+
+        if (gateName === "entry") {
+            entryCandidate = { plate: "", hits: 0 };
+        } else {
+            exitCandidate = { plate: "", hits: 0 };
+        }
+        return true;
     }
 
     function displayPlateState(target, plate, result) {
@@ -151,6 +180,10 @@ document.addEventListener("DOMContentLoaded", function () {
             kameraStatus.textContent = result.status || "Kamera aktiv";
             displayPlateState(kameraKennzeichen, plate, result);
             closeGateOnLine("entry", result);
+
+            if (handleGateOpenRecognition("entry", plate, kameraKennzeichen, "Einfahrt")) {
+                return;
+            }
 
             if (!plate || plate === ignoredCameraPlate || plate === "ERKANNT") {
                 return;
@@ -198,6 +231,10 @@ document.addEventListener("DOMContentLoaded", function () {
             kameraStatusAusfahrt.textContent = result.status || "Kamera aktiv";
             displayPlateState(kameraKennzeichenAusfahrt, plate, result);
             closeGateOnLine("exit", result);
+
+            if (handleGateOpenRecognition("exit", plate, kameraKennzeichenAusfahrt, "Ausfahrt")) {
+                return;
+            }
 
             if (!validateKennzeichen(plate)) {
                 return;
@@ -266,6 +303,7 @@ document.addEventListener("DOMContentLoaded", function () {
             <div class="dauerparker-row">
                 <strong>${escapeHtml(item.kennzeichen)}</strong>
                 <span>gebucht</span>
+                <button class="btn btn-danger btn-small dauerparker-delete" type="button" data-plate="${escapeHtml(item.kennzeichen)}">Entfernen</button>
             </div>
         `).join("");
     }
@@ -323,6 +361,11 @@ document.addEventListener("DOMContentLoaded", function () {
 
     async function starteParkvorgang(fahrzeugTyp, erkanntesKennzeichen = "", automatisch = false) {
         const kennzeichen = normalizeKennzeichen(erkanntesKennzeichen || kennzeichenInput.value);
+
+        if (gates.entry.open) {
+            showToast("Einfahrt gesperrt: Schranke ist noch offen.", "error");
+            return;
+        }
 
         if (!kennzeichen) {
             showToast("Bitte Kennzeichen eingeben.", "error");
@@ -395,7 +438,29 @@ document.addEventListener("DOMContentLoaded", function () {
         }
     }
 
+    async function entferneDauerparker(kennzeichen) {
+        try {
+            const response = await fetch(`/api/dauerparker/${routePlate(kennzeichen)}`, { method: "DELETE" });
+            const result = await response.json();
+
+            if (response.ok) {
+                showToast(`${result.kennzeichen}: Dauerparker entfernt.`, "success");
+                await loadData();
+            } else {
+                showToast(result.error || "Dauerparker konnte nicht entfernt werden.", "error");
+            }
+        } catch (error) {
+            console.error("Fehler beim Entfernen des Dauerparkers:", error);
+            showToast("Netzwerkfehler beim Entfernen des Dauerparkers.", "error");
+        }
+    }
+
     async function pruefeAusfahrt(kennzeichen) {
+        if (gates.exit.open) {
+            showToast("Ausfahrt gesperrt: Schranke ist noch offen.", "error");
+            return;
+        }
+
         try {
             const response = await fetch(`/api/parkvorgang/end/${routePlate(kennzeichen)}`, { method: "POST" });
             const result = await response.json();
@@ -491,6 +556,14 @@ document.addEventListener("DOMContentLoaded", function () {
     btnHinzufuegen.addEventListener("click", () => starteParkvorgang("normal"));
     btnDauerparker.addEventListener("click", bucheDauerparker);
     btnNotfallAusfahrt.addEventListener("click", notfallAusfahrt);
+
+    dauerparkerList.addEventListener("click", event => {
+        const button = event.target.closest(".dauerparker-delete");
+        if (!button) {
+            return;
+        }
+        entferneDauerparker(button.dataset.plate);
+    });
 
     kennzeichenInput.addEventListener("keypress", event => {
         if (event.key === "Enter") {

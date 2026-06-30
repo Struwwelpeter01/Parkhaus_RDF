@@ -25,6 +25,10 @@ PROTOKOLL_DIR = PROJECT_ROOT / "data" / "protokoll"
 PROTOKOLL_CSV = PROTOKOLL_DIR / "parkhaus_protokoll.csv"
 GATE_PULSE_SECONDS = 0.18
 gate_outputs = {}
+gate_states = {
+    "entry": {"open": False, "updated_at": 0.0},
+    "exit": {"open": False, "updated_at": 0.0},
+}
 
 exit_camera_source = os.getenv("PARKHAUS_EXIT_CAMERA_SOURCE", "").strip()
 exit_camera_recognizer = (
@@ -64,6 +68,14 @@ def pulse_gate(gate):
     time.sleep(GATE_PULSE_SECONDS)
     gate_outputs[gate].off()
     return True
+
+
+def is_gate_open(gate):
+    return bool(gate_states.get(gate, {}).get("open"))
+
+
+def set_gate_state(gate, open_state):
+    gate_states[gate] = {"open": bool(open_state), "updated_at": time.time()}
 
 
 def normalize_plate(kennzeichen):
@@ -333,6 +345,50 @@ def book_dauerparker():
     return jsonify({"success": True, "kennzeichen": kennzeichen})
 
 
+@app.route("/api/dauerparker/<path:kennzeichen>", methods=["DELETE"])
+def delete_dauerparker(kennzeichen):
+    kennzeichen = normalize_plate(kennzeichen)
+    if not kennzeichen:
+        return jsonify({"error": "Kennzeichen erforderlich"}), 400
+
+    with get_db() as conn:
+        fahrzeug = conn.execute(
+            "SELECT fahrzeug_typ FROM fahrzeuge WHERE kennzeichen = ?",
+            (kennzeichen,),
+        ).fetchone()
+        if not fahrzeug or fahrzeug["fahrzeug_typ"] != "dauerparker":
+            return jsonify({"error": "Dauerparker nicht gefunden"}), 404
+
+        conn.execute(
+            """
+            UPDATE fahrzeuge
+            SET fahrzeug_typ = 'normal', dauerparker_bezahlt = FALSE
+            WHERE kennzeichen = ?
+            """,
+            (kennzeichen,),
+        )
+        conn.execute(
+            """
+            UPDATE parkvorgaenge
+            SET bezahlt = FALSE, bezahlt_bis = NULL
+            WHERE kennzeichen = ? AND ausfahrt_zeit IS NULL
+            """,
+            (kennzeichen,),
+        )
+        log_event(
+            conn,
+            kennzeichen,
+            "Verwaltung",
+            "Annahme",
+            "Dauerparker entfernt",
+            aktion="Dauerparker entfernt",
+            fahrzeug_typ="normal",
+            details="Abo abgelaufen oder manuell geloescht",
+        )
+        conn.commit()
+
+    return jsonify({"success": True, "kennzeichen": kennzeichen})
+
 @app.route("/api/parkvorgang/start/<path:kennzeichen>", methods=["POST"])
 def start_parkvorgang(kennzeichen):
     kennzeichen = normalize_plate(kennzeichen)
@@ -345,6 +401,20 @@ def start_parkvorgang(kennzeichen):
         return jsonify({"error": "Kennzeichen erforderlich"}), 400
 
     with get_db() as conn:
+        if is_gate_open("entry"):
+            log_event(
+                conn,
+                kennzeichen,
+                "Einfahrt",
+                "Ablehnung",
+                "Einfahrtsschranke ist noch offen",
+                aktion="Einfahrt angefordert",
+                fahrzeug_typ=fahrzeug_typ,
+                details="Kennzeichenerkennung bis Schranke zu gesperrt",
+            )
+            conn.commit()
+            return jsonify({"error": "Einfahrt gesperrt: Schranke ist noch offen."}), 409
+
         belegte_plaetze = conn.execute(
             "SELECT COUNT(*) AS anzahl FROM parkvorgaenge WHERE ausfahrt_zeit IS NULL"
         ).fetchone()["anzahl"]
@@ -436,6 +506,19 @@ def end_parkvorgang(kennzeichen):
     kennzeichen = normalize_plate(kennzeichen)
 
     with get_db() as conn:
+        if is_gate_open("exit"):
+            log_event(
+                conn,
+                kennzeichen,
+                "Ausfahrt",
+                "Ablehnung",
+                "Ausfahrtsschranke ist noch offen",
+                aktion="Ausfahrt erkannt",
+                details="Kennzeichenerkennung bis Schranke zu gesperrt",
+            )
+            conn.commit()
+            return jsonify({"error": "Ausfahrt gesperrt: Schranke ist noch offen."}), 409
+
         vorgang = conn.execute(
             """
             SELECT p.*, f.fahrzeug_typ
@@ -555,6 +638,19 @@ def notfall_ausfahrt(kennzeichen):
         return jsonify({"error": "Kennzeichen erforderlich"}), 400
 
     with get_db() as conn:
+        if is_gate_open("exit"):
+            log_event(
+                conn,
+                kennzeichen,
+                "Ausfahrt",
+                "Ablehnung",
+                "Ausfahrtsschranke ist noch offen",
+                aktion="Notfall-Ausfahrt",
+                details="Notfall-Ausfahrt erst nach geschlossener Schranke moeglich",
+            )
+            conn.commit()
+            return jsonify({"error": "Ausfahrt gesperrt: Schranke ist noch offen."}), 409
+
         vorgang = conn.execute(
             """
             SELECT p.*, f.fahrzeug_typ
@@ -727,6 +823,7 @@ def schalte_schranke(gate, action):
     if gate not in {"entry", "exit"} or action not in {"open", "close"}:
         return jsonify({"error": "Ungueltige Schrankenaktion"}), 400
 
+    set_gate_state(gate, action == "open")
     richtung = "Einfahrt" if gate == "entry" else "Ausfahrt"
     hardware_enabled = pulse_gate(gate)
     with get_db() as conn:
