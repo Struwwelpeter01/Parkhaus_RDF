@@ -23,6 +23,7 @@ MAX_PARKPLAETZE = 15
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PROTOKOLL_DIR = PROJECT_ROOT / "data" / "protokoll"
 PROTOKOLL_CSV = PROTOKOLL_DIR / "parkhaus_protokoll.csv"
+WHITELIST_CSV = PROJECT_ROOT / "data" / "whitelist.csv"
 GATE_PULSE_SECONDS = 0.18
 gate_outputs = {}
 gate_states = {
@@ -80,6 +81,59 @@ def set_gate_state(gate, open_state):
 
 def normalize_plate(kennzeichen):
     return " ".join((kennzeichen or "").strip().upper().replace("-", " ").split())
+
+
+def read_whitelist():
+    if not WHITELIST_CSV.exists():
+        return set()
+
+    with WHITELIST_CSV.open("r", newline="", encoding="utf-8-sig") as csv_file:
+        reader = csv.DictReader(csv_file, delimiter=";")
+        return {
+            normalize_plate(row.get("Kennzeichen"))
+            for row in reader
+            if normalize_plate(row.get("Kennzeichen"))
+        }
+
+
+def write_whitelist(kennzeichen_set):
+    WHITELIST_CSV.parent.mkdir(parents=True, exist_ok=True)
+    with WHITELIST_CSV.open("w", newline="", encoding="utf-8-sig") as csv_file:
+        writer = csv.writer(csv_file, delimiter=";")
+        writer.writerow(["Kennzeichen"])
+        for kennzeichen in sorted(kennzeichen_set):
+            writer.writerow([kennzeichen])
+
+
+def add_to_whitelist(kennzeichen):
+    kennzeichen = normalize_plate(kennzeichen)
+    if not kennzeichen:
+        return
+
+    whitelist = read_whitelist()
+    if kennzeichen not in whitelist:
+        whitelist.add(kennzeichen)
+        write_whitelist(whitelist)
+
+
+def is_whitelisted(kennzeichen):
+    return normalize_plate(kennzeichen) in read_whitelist()
+
+
+def sync_dauerparker_whitelist(conn):
+    whitelist = read_whitelist()
+    rows = conn.execute(
+        "SELECT kennzeichen FROM fahrzeuge WHERE fahrzeug_typ = 'dauerparker'"
+    ).fetchall()
+    updated = False
+    for row in rows:
+        kennzeichen = normalize_plate(row["kennzeichen"])
+        if kennzeichen and kennzeichen not in whitelist:
+            whitelist.add(kennzeichen)
+            updated = True
+
+    if updated or not WHITELIST_CSV.exists():
+        write_whitelist(whitelist)
 
 
 def calculate_cost(einfahrt_zeit, fahrzeug_typ="normal"):
@@ -222,6 +276,7 @@ def init_db():
         ensure_column(conn, "protokoll", "kosten", "REAL")
         ensure_column(conn, "protokoll", "details", "TEXT DEFAULT ''")
         migrate_plate_format(conn)
+        sync_dauerparker_whitelist(conn)
         write_protokoll_csv(conn)
         conn.commit()
 
@@ -239,6 +294,12 @@ def get_kamera_kennzeichen():
 @app.route("/api/kamera/kennzeichen/ausfahrt", methods=["GET"])
 def get_ausfahrt_kamera_kennzeichen():
     return jsonify(exit_camera_recognizer.get_state())
+
+
+@app.route("/api/whitelist/pruefen/<path:kennzeichen>", methods=["GET"])
+def pruefe_whitelist(kennzeichen):
+    kennzeichen = normalize_plate(kennzeichen)
+    return jsonify({"kennzeichen": kennzeichen, "allowed": is_whitelisted(kennzeichen)})
 
 
 @app.route("/api/kamera/stream")
@@ -329,6 +390,7 @@ def book_dauerparker():
             """,
             (kennzeichen, name),
         )
+        add_to_whitelist(kennzeichen)
         log_event(
             conn,
             kennzeichen,
@@ -394,6 +456,7 @@ def start_parkvorgang(kennzeichen):
     kennzeichen = normalize_plate(kennzeichen)
     data = request.get_json(silent=True) or {}
     fahrzeug_typ = data.get("fahrzeug_typ", "normal")
+    automatisch = bool(data.get("automatisch"))
     if fahrzeug_typ not in {"normal", "dauerparker"}:
         fahrzeug_typ = "normal"
 
@@ -401,6 +464,20 @@ def start_parkvorgang(kennzeichen):
         return jsonify({"error": "Kennzeichen erforderlich"}), 400
 
     with get_db() as conn:
+        if automatisch and not is_whitelisted(kennzeichen):
+            log_event(
+                conn,
+                kennzeichen,
+                "Einfahrt",
+                "Ablehnung",
+                "Kennzeichen nicht auf White-List",
+                aktion="Automatische Einfahrt",
+                fahrzeug_typ=fahrzeug_typ,
+                details="Neue Kennzeichen muessen haendisch bestaetigt werden",
+            )
+            conn.commit()
+            return jsonify({"error": "Kennzeichen muss zuerst haendisch bestaetigt werden."}), 403
+
         if is_gate_open("entry"):
             log_event(
                 conn,
@@ -498,6 +575,7 @@ def start_parkvorgang(kennzeichen):
         )
         conn.commit()
 
+    add_to_whitelist(kennzeichen)
     return jsonify({"success": True, "message": "Parkvorgang gestartet", "kennzeichen": kennzeichen})
 
 

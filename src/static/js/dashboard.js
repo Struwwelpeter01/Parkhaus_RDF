@@ -219,7 +219,20 @@ document.addEventListener("DOMContentLoaded", function () {
 
         lastAutoEntryPlate = plate;
         lastAutoEntryAt = now;
-        await starteParkvorgang("normal", plate, true);
+        if (await isWhitelisted(plate)) {
+            await starteParkvorgang("normal", plate, true);
+        }
+    }
+
+    async function isWhitelisted(plate) {
+        try {
+            const response = await fetch(`/api/whitelist/pruefen/${routePlate(plate)}`);
+            const result = await response.json();
+            return response.ok && Boolean(result.allowed);
+        } catch (error) {
+            console.error("Fehler beim Pruefen der White-List:", error);
+            return false;
+        }
     }
 
     async function loadAusfahrtKameraKennzeichen() {
@@ -381,7 +394,7 @@ document.addEventListener("DOMContentLoaded", function () {
             const response = await fetch(`/api/parkvorgang/start/${routePlate(kennzeichen)}`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ fahrzeug_typ: fahrzeugTyp }),
+                body: JSON.stringify({ fahrzeug_typ: fahrzeugTyp, automatisch }),
             });
             const result = await response.json();
 
