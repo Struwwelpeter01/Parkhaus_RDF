@@ -1,4 +1,36 @@
 ﻿Datum/Uhrzeit;Kennzeichen;Richtung;Aktion;Annahme/Ablehnung;Grund;Fahrzeugtyp;Kosten;Details
+2026-06-30 09:30:40.780814;;Ausfahrt;Schranke close;Annahme;Schranke geschlossen;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:30:31.153014;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:30:31.126953;W 2612;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 09:30:25.141632;W 2616;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Kein aktiver Parkvorgang gefunden;;;
+2026-06-30 09:30:22.239264;W 2616;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Kein aktiver Parkvorgang gefunden;;;
+2026-06-30 09:30:20.729069;;Einfahrt;Schranke close;Annahme;Schranke geschlossen;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:30:18.638440;W 2616;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Kein aktiver Parkvorgang gefunden;;;
+2026-06-30 09:30:14.541153;;Ausfahrt;Schranke close;Annahme;Schranke geschlossen;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:30:13.669989;W 2616;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Ausfahrtsschranke ist noch offen;;;Notfall-Ausfahrt erst nach geschlossener Schranke moeglich
+2026-06-30 09:30:11.812710;W 2616;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Ausfahrtsschranke ist noch offen;;;Notfall-Ausfahrt erst nach geschlossener Schranke moeglich
+2026-06-30 09:30:05.720906;;Einfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:30:05.697748;W 2612;Einfahrt;Einfahrt gestartet;Annahme;Normal;normal;;Normaler Parkvorgang
+2026-06-30 09:29:59.536589;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:29:59.507075;W 2616;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3803.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 09:29:58.332046;;Ausfahrt;Schranke close;Annahme;Schranke geschlossen;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:29:43.368014;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:29:43.312116;W 8222;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3802.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 09:29:42.514125;;Ausfahrt;Schranke close;Annahme;Schranke geschlossen;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:29:33.870148;W 8222;Ausfahrt;Notfall-Ausfahrt;Ablehnung;Ausfahrtsschranke ist noch offen;;;Notfall-Ausfahrt erst nach geschlossener Schranke moeglich
+2026-06-30 09:29:27.522302;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 09:29:27.495928;O 4086;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3531.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 09:29:10.857349;D 1234;Verwaltung;Dauerparker entfernt;Annahme;Dauerparker entfernt;normal;;Abo abgelaufen oder manuell geloescht
+2026-06-30 09:29:09.945530;C 2663;Verwaltung;Dauerparker entfernt;Annahme;Dauerparker entfernt;normal;;Abo abgelaufen oder manuell geloescht
+2026-06-30 08:49:34.766478;O 4086;Kasse;Bezahlfenster abgelaufen;Ablehnung;Bezahlzeit abgelaufen;normal;3411.00;Bezahlt-Haekchen wurde nach 10 Minuten automatisch entfernt
+2026-06-30 08:39:17.178938;G 4672;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3379.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 08:39:09.798087;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 08:39:09.773993;A 4672;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3379.00;Ausfahrt wurde haendisch ausgeloest
+2026-06-30 08:38:48.554227;A 4672;Kasse;Bezahlstatus geaendert;Annahme;Kunde hat gezahlt;normal;3378.00;Ausfahrt bis 2026-06-30T08:48:48 erlaubt
+2026-06-30 08:38:47.202894;G 4672;Kasse;Bezahlstatus geaendert;Annahme;Kunde hat gezahlt;normal;3378.00;Ausfahrt bis 2026-06-30T08:48:47 erlaubt
+2026-06-30 08:38:45.538948;O 4086;Kasse;Bezahlstatus geaendert;Annahme;Kunde hat gezahlt;normal;3379.00;Ausfahrt bis 2026-06-30T08:48:45 erlaubt
+2026-06-30 08:29:52.521444;;Ausfahrt;Schranke open;Annahme;Schranke geoeffnet;;;Kein GPIO-Pin konfiguriert
+2026-06-30 08:29:52.507874;W 1521;Ausfahrt;Notfall-Ausfahrt;Annahme;Manuelle Notfall-Ausfahrt;normal;3353.00;Ausfahrt wurde haendisch ausgeloest
 2026-06-29 13:53:21.148532;A 4672;Ausfahrt;Ausfahrt erkannt;Ablehnung;Bitte vor Ausfahrt bezahlen;normal;2.00;Bezahlt-Haekchen fehlt
 2026-06-29 13:53:20.842858;A 4672;Einfahrt;Einfahrt gestartet;Annahme;Normal;normal;;Normaler Parkvorgang
 2026-06-29 13:53:18.886194;G 4672;Ausfahrt;Ausfahrt erkannt;Ablehnung;Bitte vor Ausfahrt bezahlen;normal;2.00;Bezahlt-Haekchen fehlt

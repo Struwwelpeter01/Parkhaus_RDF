@@ -169,7 +169,7 @@ names:
     print(f"  ├── val/labels/")
     print(f"  └── data.yaml ✅")
     print(f"\n🚀 Bereit zum Trainieren mit:")
-    print(f"   model = YOLO('yolov8n.pt')")
+    print(f"   model = YOLO('yolo11n.pt')")
     print(f"   model.train(data='data/data.yaml', epochs=100)")
     print(f"{'='*60}\n")
 
