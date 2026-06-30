@@ -25,6 +25,8 @@ PROTOKOLL_DIR = PROJECT_ROOT / "data" / "protokoll"
 PROTOKOLL_CSV = PROTOKOLL_DIR / "parkhaus_protokoll.csv"
 WHITELIST_CSV = PROJECT_ROOT / "data" / "whitelist.csv"
 GATE_PULSE_SECONDS = 0.18
+DEFAULT_GATE_ENTRY_GPIO = 17
+DEFAULT_GATE_EXIT_GPIO = 27
 gate_outputs = {}
 gate_states = {
     "entry": {"open": False, "updated_at": 0.0},
@@ -48,8 +50,9 @@ def get_db():
 
 def get_gate_pin(gate):
     env_name = "PARKHAUS_GATE_ENTRY_GPIO" if gate == "entry" else "PARKHAUS_GATE_EXIT_GPIO"
+    default_pin = DEFAULT_GATE_ENTRY_GPIO if gate == "entry" else DEFAULT_GATE_EXIT_GPIO
     value = os.getenv(env_name, "").strip()
-    return int(value) if value else None
+    return int(value) if value else default_pin
 
 
 def pulse_gate(gate):

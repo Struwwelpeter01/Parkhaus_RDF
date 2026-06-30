@@ -50,8 +50,7 @@ AUTO_SCHLIESSEN_MS = 15_000
 # Raspberry Pi gibt beim erkannten Auto kurz 3.3 V/HIGH auf den ESP-GPIO.
 SIGNAL_AKTIV_HIGH = True
 
-# Zum Testen in Wokwi/Thonny auf True stellen.
-# Dann werden die Eingangswerte alle 500 ms ausgegeben.
+# Zum Testen auf True stellen. Dann werden die Eingangswerte alle 500 ms ausgegeben.
 DEBUG_EINGAENGE = False
 
 

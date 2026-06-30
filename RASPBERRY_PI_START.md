@@ -66,9 +66,10 @@ git pull
 Der Laptop muss dafuer bei der Praesentation nicht dabei sein. GitHub wird nur
 zum Uebertragen des Projekts auf den Pi benutzt.
 
-Wichtig: Laufzeitdaten wie `data/parkhaus.db`, `data/manifest.csv`, `data/raw/`,
-`.venv/` und `__pycache__/` gehoeren nicht in Git. Sie bleiben lokal auf dem Pi,
-damit spaetere Updates mit `git pull` nicht blockiert werden.
+Wichtig: Laufzeitdaten wie `data/parkhaus.db`, `data/manifest.csv`,
+`data/whitelist.csv`, `data/raw/`, `.venv/` und `__pycache__/` gehoeren nicht in
+Git. Sie bleiben lokal auf dem Pi, damit spaetere Updates mit `git pull` nicht
+blockiert werden.
 
 ## 3. Python-Umgebung einrichten
 
@@ -126,7 +127,32 @@ Standardmaessig wird OCR sofort gestartet, sobald YOLO ein Kennzeichen findet. W
 PARKHAUS_STABLE_SECONDS=0.5 python run.py
 ```
 
-## 5. Praesentationsmodus mit Vollbild-Browser
+## 5. GPIO-Ausgaenge fuer die Schranken
+
+Die Raspberry-Pi-Ausgaenge sind im Programm standardmaessig so eingestellt:
+
+```text
+GPIO17, physischer Pin 11 -> Signal Schranke Einfahrt oeffnen
+GPIO27, physischer Pin 13 -> Signal Schranke Ausfahrt oeffnen
+GND, z.B. physischer Pin 6 -> GND vom ESP32-C6
+```
+
+Verdrahtung zum ESP32-C6:
+
+```text
+Raspberry Pi GPIO17 -> ESP32-C6 GPIO2
+Raspberry Pi GPIO27 -> ESP32-C6 GPIO3
+Raspberry Pi GND    -> ESP32-C6 GND
+```
+
+Die Signale sind 3.3 V/HIGH-Impulse. Falls du andere Raspberry-Pins nutzen
+willst, kannst du sie beim Start ueberschreiben:
+
+```bash
+PARKHAUS_GATE_ENTRY_GPIO=17 PARKHAUS_GATE_EXIT_GPIO=27 python run.py
+```
+
+## 6. Praesentationsmodus mit Vollbild-Browser
 
 Wenn der Browser bei der Praesentation schoener im Vollbild laufen soll, kannst
 du ihn nach dem Start des Programms mit `F11` in den Vollbildmodus schalten.
@@ -150,7 +176,7 @@ Dann ein zweites Terminal oeffnen und dort starten:
 chromium-browser --kiosk http://127.0.0.1:5000
 ```
 
-## 6. Automatisch nach dem Einschalten starten
+## 7. Automatisch nach dem Einschalten starten
 
 Wenn das Projekt beim Einschalten des Raspberry Pi automatisch starten soll,
 kannst du im Autostart des Pi einen Befehl eintragen.
@@ -185,7 +211,7 @@ Nach einem Neustart startet der Pi das Parkhaus-Programm automatisch:
 sudo reboot
 ```
 
-## 7. Projekt spaeter updaten
+## 8. Projekt spaeter updaten
 
 Wenn du am Laptop etwas am Code geaendert hast, erst auf GitHub hochladen.
 

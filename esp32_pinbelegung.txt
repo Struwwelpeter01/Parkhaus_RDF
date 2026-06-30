@@ -1,5 +1,11 @@
 ESP32-C6 Pinbelegung
 
+SERVO 
+
+braun  -  GND
+rot  -  V+
+orange  -  PWM
+
 
 EINGAENGE
 
@@ -21,24 +27,14 @@ GPIO20 - LED Ausfahrt gruen
 
 VERDRAHTUNG EINGAENGE MIT RASPBERRY PI
 
-Raspberry-Ausgang Einfahrt ---- GPIO2 am ESP32-C6
-Raspberry-Ausgang Ausfahrt  ---- GPIO3 am ESP32-C6
+Raspberry Pi GPIO17, Pin 11 ---- GPIO2 am ESP32-C6
+Raspberry Pi GPIO27, Pin 13 ---- GPIO3 am ESP32-C6
 
 Raspberry Pi GND ---- ESP32-C6 GND
 
 Der Raspberry Pi gibt beim erkannten Auto kurz 3.3 V/HIGH aus.
 Im Code muss dafuer SIGNAL_AKTIV_HIGH = True eingestellt sein.
 Die ESP-Eingaenge nutzen im Programm internen Pull-down.
-
-
-TEST IN WOKWI MIT PUSHBUTTONS
-
-GPIO2 ---- Taster ---- 3V3
-GPIO3 ---- Taster ---- 3V3
-
-Debug-Test, wenn DEBUG_EINGAENGE = True:
-Nicht gedrueckt muss in der Konsole stehen: 0
-Gedrueckt muss in der Konsole stehen: 1
 
 
 HINWEIS
